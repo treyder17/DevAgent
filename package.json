@@ -1,0 +1,29 @@
+{
+  "name": "devagent-cli",
+  "version": "1.0.0",
+  "description": "AI coding assistant for your terminal — codebase-aware, agent-powered.",
+  "bin": {
+    "da": "./src/da.js"
+  },
+  "type": "module",
+  "main": "./src/da.js",
+  "scripts": {
+    "start": "node src/da.js",
+    "dev": "node --watch src/da.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "readline": "^1.3.0",
+    "glob": "^11.0.0",
+    "ignore": "^6.0.2",
+    "minimist": "^1.2.8",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["ai", "cli", "coding-assistant", "devtools"],
+  "license": "MIT"
+}
