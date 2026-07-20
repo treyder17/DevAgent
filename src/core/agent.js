@@ -1,7 +1,7 @@
 // src/core/agent.js — provider-agnostic agentic loop with tool use
 
 import { TOOL_DEFINITIONS, runShell, readFile, writeFile } from '../tools/builtin.js';
-import { createProvider } from './providers.js';
+import { createProvider, detectProvider } from './providers.js';
 
 const MAX_ITERATIONS = 20; // safety limit for the tool loop
 
@@ -20,6 +20,27 @@ export class Agent {
 
   clearHistory() {
     this.history = [];
+  }
+
+  /** List models available from the current provider. */
+  async listModels() {
+    return this._provider.listModels();
+  }
+
+  /**
+   * Switch the active model within the current provider and rebuild the client.
+   * Returns { ok, warning } — warning is set when the model looks like it
+   * belongs to a different provider (use `da config` for cross-provider switches).
+   */
+  setModel(model) {
+    this.config.model = model;
+    this._provider = createProvider(this.config);
+    const guessed = detectProvider(model);
+    const warning = guessed !== this.config.provider
+      ? `Model "${model}" looks like a "${guessed}" model, but the active provider is "${this.config.provider}". `
+        + `If it fails, set it up with: da config set model ${model}`
+      : null;
+    return { ok: true, warning };
   }
 
   _buildSystemPrompt() {

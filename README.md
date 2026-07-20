@@ -107,6 +107,7 @@ da [prompt]              One-shot: ask a question and exit
 da chat                  Start interactive chat (default)
 da config <action>       Manage configuration
 da plugin <action>       Manage plugins
+da models [--all]        List available models (free ones by default)
 da index [dir]           Index a directory and show summary
 
 Options:

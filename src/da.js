@@ -14,7 +14,7 @@ import { CodebaseIndex } from './core/codebase.js';
 import { PluginManager } from './core/plugins.js';
 import { UI } from './ui/ui.js';
 import { CONFIG } from './core/config.js';
-import { PROVIDERS } from './core/providers.js';
+import { PROVIDERS, createProvider } from './core/providers.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -59,6 +59,11 @@ async function main() {
 
   if (cmd === 'index') {
     await handleIndex(args);
+    return;
+  }
+
+  if (cmd === 'models') {
+    await handleModels(args, argv);
     return;
   }
 
@@ -184,6 +189,36 @@ async function handleSlashCommand(input, agent, ui, rl) {
       const names = agent.plugins?.names ?? [];
       ui.print(names.length ? `Plugins: ${names.join(', ')}` : 'No plugins loaded.');
       break;
+    case 'models': {
+      const sp = ui.spinner('Fetching models…');
+      try {
+        const models = await agent.listModels();
+        const anyPricing = models.some(m => m.hasPricing);
+        const showAll = args.includes('--all');
+        const free = models.filter(m => m.free);
+        sp.succeed(`${models.length} models` + (anyPricing ? ` · ${free.length} free` : ''));
+        const list = (anyPricing && !showAll ? free : models)
+          .sort((a, b) => a.id.localeCompare(b.id));
+        list.forEach(m => ui.print(`  ${m.tools ? '✓' : ' '}  ${m.id}`));
+        ui.print(`\nSwitch with:  /model <id>`);
+      } catch (err) {
+        sp.fail(`Could not list models: ${err.message}`);
+      }
+      break;
+    }
+    case 'model': {
+      const id = args[0];
+      if (!id) {
+        ui.print(`Current model: ${agent.config.model} (provider: ${agent.config.provider})`);
+        ui.print('Switch with: /model <id> — list options with /models');
+        break;
+      }
+      const { warning } = agent.setModel(id);
+      CONFIG.set('model', id);
+      ui.success(`Model switched to: ${id}`);
+      if (warning) ui.warn(warning);
+      break;
+    }
     case 'exit':
     case 'quit':
       ui.print('Goodbye!');
@@ -252,6 +287,54 @@ async function handleIndex(args) {
   ui.print(index.summary());
 }
 
+async function handleModels(args, argv) {
+  const ui = new UI();
+  const config = await CONFIG.load(argv);
+  if (!config.apiKey) {
+    ui.error(missingKeyMessage(config.provider));
+    process.exit(1);
+  }
+
+  const showAll = args.includes('--all') || args.includes('-a');
+  const spinner = ui.spinner(`Fetching models from ${config.provider}…`);
+
+  let models;
+  try {
+    const provider = createProvider(config);
+    models = await provider.listModels();
+  } catch (err) {
+    spinner.fail(`Could not list models: ${err.message}`);
+    process.exit(1);
+  }
+
+  const anyPricing = models.some(m => m.hasPricing);
+  const free = models.filter(m => m.free);
+  spinner.succeed(
+    `${config.provider}: ${models.length} models` +
+    (anyPricing ? ` · ${free.length} free` : '')
+  );
+
+  // For providers that expose pricing (OpenRouter), default to showing free
+  // models only — that's "all free models". Use --all to see everything.
+  const shouldFilterFree = anyPricing && !showAll;
+  const list = (shouldFilterFree ? free : models).sort((a, b) => a.id.localeCompare(b.id));
+
+  if (shouldFilterFree) {
+    ui.print(`\nFree models (✓ = supports tools — needed for file/command actions):\n`);
+  } else {
+    ui.print('');
+  }
+
+  for (const m of list) {
+    const toolMark = m.tools ? '✓' : ' ';
+    const freeTag = (anyPricing && !shouldFilterFree && m.free) ? '  [free]' : '';
+    ui.print(`  ${toolMark}  ${m.id}${freeTag}`);
+  }
+
+  ui.print(`\nUse one with:  da config set model <id>   (or per session:  da -m <id>)`);
+  if (shouldFilterFree) ui.print(`See every model (incl. paid) with:  da models --all`);
+}
+
 function printHelp() {
   console.log(`
 DevAgent (da) — AI coding assistant for your terminal
@@ -261,6 +344,7 @@ USAGE
   da chat                  Start interactive chat session
   da config <action>       Manage configuration
   da plugin <action>       Manage plugins
+  da models [--all]        List available models (free ones by default)
   da index [dir]           Index a directory
 
 OPTIONS
@@ -294,6 +378,8 @@ EXAMPLES
 SLASH COMMANDS (in chat)
   /help      Show slash commands
   /clear     Clear conversation history
+  /models    List available models (free ones by default)
+  /model     Show or switch the active model
   /index     Re-index codebase
   /context   Show codebase summary
   /plugins   List loaded plugins
@@ -304,12 +390,14 @@ SLASH COMMANDS (in chat)
 function printSlashHelp(ui) {
   ui.print(`
 Slash commands:
-  /help      This help
-  /clear     Clear conversation history
-  /index     Re-index codebase
-  /context   Show codebase summary
-  /plugins   List loaded plugins
-  /exit      Exit DevAgent
+  /help          This help
+  /clear         Clear conversation history
+  /models [--all] List available models (free ones by default)
+  /model [id]    Show or switch the active model
+  /index         Re-index codebase
+  /context       Show codebase summary
+  /plugins       List loaded plugins
+  /exit          Exit DevAgent
 `);
 }
 

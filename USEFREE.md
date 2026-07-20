@@ -32,19 +32,21 @@ The `:free` suffix is what makes it cost nothing.
 > ⚠️ **Which models are free changes over time.** OpenRouter regularly rotates
 > its free tier — DeepSeek's `:free` variants in particular come and go, and are
 > sometimes moved to paid-only. Don't hardcode a model name from a guide; list
-> what's *currently* free (and supports tools) yourself:
+> what's *currently* free yourself:
 >
 > ```bash
-> curl -s https://openrouter.ai/api/v1/models \
->   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-> | python3 -c 'import sys,json; \
-> [print(m["id"]) for m in json.load(sys.stdin)["data"] \
-> if m["pricing"]["prompt"]=="0" and "tools" in m.get("supported_parameters",[])]'
+> da models          # shows all free models; ✓ = supports tools
+> da models --all    # everything, including paid
 > ```
 >
-> Then `da config set model <one-of-those>`. If DeepSeek shows up free there,
-> great — use it. If not, any free tool-capable model works, or use the official
-> DeepSeek API below.
+> Then pick one:
+>
+> ```bash
+> da config set model <one-of-those>
+> ```
+>
+> If DeepSeek shows up free there, great — use it. If not, any free tool-capable
+> model (✓) works, or use the official DeepSeek API below.
 
 > ℹ️ Tool-calling (file edits, running commands) needs a model that supports
 > function calling. Reasoning-only models sometimes don't. If the agent stops

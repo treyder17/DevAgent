@@ -92,6 +92,8 @@ class AnthropicProvider {
   constructor({ name, apiKey, baseUrl, verbose }) {
     this.name = name;
     this.verbose = verbose;
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
     this._client = new Anthropic({ apiKey, baseURL: baseUrl });
   }
 
@@ -140,6 +142,19 @@ class AnthropicProvider {
       .map(b => ({ id: b.id, name: b.name, input: b.input }));
 
     return { text, toolCalls, stopReason: response.stop_reason };
+  }
+
+  async listModels() {
+    const res = await fetch(`${this.baseUrl}/v1/models`, {
+      headers: {
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+    });
+    if (!res.ok) throw new Error(`anthropic models error ${res.status}`);
+    const data = await res.json();
+    // Anthropic has no "free" concept and all current models support tools.
+    return (data.data || []).map(m => ({ id: m.id, free: false, tools: true }));
   }
 }
 
@@ -243,6 +258,24 @@ class OpenAIProvider {
       : 'end_turn';
 
     return { text, toolCalls, stopReason };
+  }
+
+  async listModels() {
+    const res = await fetch(`${this.baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+    if (!res.ok) throw new Error(`${this.name} models error ${res.status}`);
+    const data = await res.json();
+    return (data.data || []).map(m => {
+      // Pricing is only present on OpenRouter; treat "0"/0 for both sides as free.
+      const p = m.pricing;
+      const isZero = v => v === 0 || v === '0';
+      const free = p ? (isZero(p.prompt) && isZero(p.completion)) : false;
+      const params = m.supported_parameters || [];
+      // If a provider doesn't advertise params, assume tool support (OpenAI/DeepSeek do).
+      const tools = params.length ? params.includes('tools') : true;
+      return { id: m.id, free, tools, hasPricing: !!p };
+    });
   }
 }
 
