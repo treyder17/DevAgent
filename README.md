@@ -2,7 +2,9 @@
 
 > AI coding assistant for your terminal — codebase-aware, agent-powered.
 
-DevAgent gives you a Claude-powered assistant that understands your entire project and can take real actions: run tests, write code, manage git, and more — all from a single `da` command.
+DevAgent gives you an AI assistant that understands your entire project and can take real actions: run tests, write code, manage git, and more — all from a single `da` command.
+
+It works with multiple model providers — **Anthropic (Claude)**, **DeepSeek**, **OpenRouter**, and any **OpenAI-compatible** endpoint. Want to run it for free? See **[USEFREE.md](./USEFREE.md)** for free DeepSeek models.
 
 ---
 
@@ -29,13 +31,27 @@ cd ~/.devagent/src && npm install
 
 ## Setup
 
+Pick a provider and set its key. DevAgent auto-detects the provider from the model name.
+
+**Anthropic (Claude) — default**
 ```bash
-da config set api-key sk-ant-...
+da config set api-key sk-ant-...        # from console.anthropic.com
 ```
 
-Get a key at [console.anthropic.com](https://console.anthropic.com).
+**DeepSeek (cheap / free) — see [USEFREE.md](./USEFREE.md)**
+```bash
+da config set deepseekApiKey sk-...     # from platform.deepseek.com
+da config set model deepseek-chat
+```
 
-You can also set `ANTHROPIC_API_KEY` in your environment — `da` will pick it up automatically.
+**OpenRouter (free DeepSeek models)**
+```bash
+da config set openrouterApiKey sk-or-...            # from openrouter.ai
+da config set model deepseek/deepseek-chat-v3-0324:free
+```
+
+Each provider also reads its matching env var automatically: `ANTHROPIC_API_KEY`,
+`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`.
 
 ---
 
@@ -94,8 +110,10 @@ da plugin <action>       Manage plugins
 da index [dir]           Index a directory and show summary
 
 Options:
-  -k, --api-key KEY      Anthropic API key (overrides config)
+  -k, --api-key KEY      API key for the active provider (overrides config)
   -m, --model MODEL      Model to use (default: claude-sonnet-4-6)
+  -p, --provider NAME    anthropic | deepseek | openrouter | openai (auto-detected)
+  --base-url URL         Override the provider endpoint (self-hosted / proxy)
   --cwd DIR              Working directory
   --no-index             Skip codebase indexing
   --verbose              Debug output
@@ -103,12 +121,24 @@ Options:
   -h, --help             Show help
 ```
 
+### Providers & models
+
+| Provider   | Example models                                   | Key field / env var                    |
+|------------|--------------------------------------------------|----------------------------------------|
+| anthropic  | `claude-sonnet-4-6`, `claude-opus-4-6`           | `anthropicApiKey` / `ANTHROPIC_API_KEY` |
+| deepseek   | `deepseek-chat`, `deepseek-reasoner`             | `deepseekApiKey` / `DEEPSEEK_API_KEY`   |
+| openrouter | `deepseek/deepseek-chat-v3-0324:free`, `deepseek/deepseek-r1:free` | `openrouterApiKey` / `OPENROUTER_API_KEY` |
+| openai     | `gpt-4o`, `gpt-4o-mini`                           | `openaiApiKey` / `OPENAI_API_KEY`       |
+
+The provider is auto-detected from the model name; override it with `--provider`.
+
 ### Config
 ```bash
 da config set api-key sk-ant-...
-da config set model claude-opus-4-6
+da config set model deepseek-chat
+da config set provider deepseek     # optional; usually auto-detected
 da config list
-da config path            # show config file location
+da config path                      # show config file location
 ```
 
 ---
@@ -169,8 +199,8 @@ Plugins are stored in `~/.devagent/plugins/`. See `src/plugins/http-plugin.examp
 
 ## How it works
 
-1. **Codebase indexing** — on startup, DevAgent walks your project directory and builds a file map. Key files (package.json, README, source files) are included verbatim in Claude's context window.
-2. **Agentic loop** — your message is sent to Claude with the codebase context and a set of tools. Claude decides which tools to call (run commands, read/write files), executes them, sees the results, and loops until the task is complete.
+1. **Codebase indexing** — on startup, DevAgent walks your project directory and builds a file map. Key files (package.json, README, source files) are included verbatim in the model's context window.
+2. **Agentic loop** — your message is sent to the model with the codebase context and a set of tools. The model decides which tools to call (run commands, read/write files), executes them, sees the results, and loops until the task is complete.
 3. **Multi-turn memory** — conversation history is kept in memory for the session, so you can follow up naturally.
 
 ### Built-in tools
@@ -186,7 +216,9 @@ Plugins are stored in `~/.devagent/plugins/`. See `src/plugins/http-plugin.examp
 ## Requirements
 
 - Node.js 18+
-- An [Anthropic API key](https://console.anthropic.com)
+- An API key for at least one provider: [Anthropic](https://console.anthropic.com),
+  [DeepSeek](https://platform.deepseek.com), or [OpenRouter](https://openrouter.ai)
+  (the last two can be free — see [USEFREE.md](./USEFREE.md))
 
 ---
 

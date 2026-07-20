@@ -4,11 +4,15 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
+import { PROVIDERS, detectProvider } from './providers.js';
+
 const CONFIG_DIR = join(homedir(), '.devagent');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS = {
+  provider: '',            // '' = auto-detect from the model name
   model: 'claude-sonnet-4-6',
+  baseUrl: '',             // optional override for the provider endpoint
   maxTokens: 8192,
   maxFileSizeKb: 100,
   maxIndexFiles: 2000,
@@ -52,10 +56,27 @@ async function load(argv) {
   // CLI flags override config file
   if (argv['api-key']) cfg.apiKey = argv['api-key'];
   if (argv.model) cfg.model = argv.model;
+  if (argv.provider) cfg.provider = argv.provider;
+  if (argv['base-url']) cfg.baseUrl = argv['base-url'];
   if (argv.verbose) cfg.verbose = true;
 
-  // Fall back to env var
-  if (!cfg.apiKey) cfg.apiKey = process.env.ANTHROPIC_API_KEY;
+  // Resolve which provider we're talking to (explicit wins, else guess from model).
+  cfg.provider = cfg.provider || detectProvider(cfg.model);
+  const preset = PROVIDERS[cfg.provider];
+  if (!preset) {
+    throw new Error(
+      `Unknown provider "${cfg.provider}". Known: ${Object.keys(PROVIDERS).join(', ')}.`
+    );
+  }
+
+  // Resolve the API key, in priority order:
+  //   1. --api-key flag (already set above)
+  //   2. provider-specific stored key, e.g. deepseekApiKey
+  //   3. generic stored apiKey
+  //   4. provider-specific env var, e.g. DEEPSEEK_API_KEY
+  const providerKeyField = `${cfg.provider}ApiKey`;
+  if (!cfg.apiKey && cfg[providerKeyField]) cfg.apiKey = cfg[providerKeyField];
+  if (!cfg.apiKey) cfg.apiKey = process.env[preset.envKey];
 
   return cfg;
 }

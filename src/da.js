@@ -14,13 +14,22 @@ import { CodebaseIndex } from './core/codebase.js';
 import { PluginManager } from './core/plugins.js';
 import { UI } from './ui/ui.js';
 import { CONFIG } from './core/config.js';
+import { PROVIDERS } from './core/providers.js';
+
+function missingKeyMessage(provider) {
+  const preset = PROVIDERS[provider];
+  const envKey = preset?.envKey ?? 'ANTHROPIC_API_KEY';
+  return `No API key found for provider "${provider}".\n` +
+    `  Set it with:  da config set ${provider}ApiKey YOUR_KEY\n` +
+    `  Or via env:   export ${envKey}="YOUR_KEY"`;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const argv = minimist(process.argv.slice(2), {
   boolean: ['help', 'version', 'no-index', 'verbose'],
-  string: ['api-key', 'model', 'cwd'],
-  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model' },
+  string: ['api-key', 'model', 'cwd', 'provider', 'base-url'],
+  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider' },
 });
 
 async function main() {
@@ -70,12 +79,13 @@ async function runChat(argv) {
 
   const config = await CONFIG.load(argv);
   if (!config.apiKey) {
-    ui.error('No API key found. Run: da config set api-key YOUR_KEY');
+    ui.error(missingKeyMessage(config.provider));
     process.exit(1);
   }
 
   const workdir = resolve(argv.cwd || process.cwd());
   ui.info(`Working directory: ${workdir}`);
+  ui.info(`Provider: ${config.provider} · Model: ${config.model}`);
 
   // Index codebase
   let codebaseIndex = null;
@@ -136,7 +146,7 @@ async function runOneShot(prompt, argv) {
   const ui = new UI({ quiet: true });
   const config = await CONFIG.load(argv);
   if (!config.apiKey) {
-    ui.error('No API key found. Run: da config set api-key YOUR_KEY');
+    ui.error(missingKeyMessage(config.provider));
     process.exit(1);
   }
 
@@ -197,7 +207,10 @@ async function handleConfig(args) {
   } else if (action === 'list' || action === 'show') {
     const cfg = CONFIG.getAll();
     for (const [k, v] of Object.entries(cfg)) {
-      const display = k.includes('key') ? v.slice(0, 8) + '…' : v;
+      const isSecret = /key/i.test(k);
+      const display = isSecret && typeof v === 'string' && v
+        ? v.slice(0, 8) + '…'
+        : JSON.stringify(v);
       ui.print(`  ${k} = ${display}`);
     }
   } else if (action === 'path') {
@@ -251,20 +264,31 @@ USAGE
   da index [dir]           Index a directory
 
 OPTIONS
-  -k, --api-key KEY        Anthropic API key (overrides config)
+  -k, --api-key KEY        API key for the active provider (overrides config)
   -m, --model MODEL        Model to use (default: claude-sonnet-4-6)
+  -p, --provider NAME      Provider: anthropic | deepseek | openrouter | openai
+                           (default: auto-detected from the model name)
+  --base-url URL           Override the provider endpoint (self-hosted / proxy)
   --cwd DIR                Working directory
   --no-index               Skip codebase indexing
   --verbose                Show debug output
   -v, --version            Show version
   -h, --help               Show this help
 
+PROVIDERS & MODELS
+  anthropic   claude-sonnet-4-6, claude-opus-4-6, …        (ANTHROPIC_API_KEY)
+  deepseek    deepseek-chat, deepseek-reasoner             (DEEPSEEK_API_KEY)
+  openrouter  deepseek/deepseek-chat-v3-0324:free, …       (OPENROUTER_API_KEY)
+  openai      gpt-4o, gpt-4o-mini, …                       (OPENAI_API_KEY)
+  The provider is auto-detected from the model name, or set it explicitly.
+
 EXAMPLES
   da "explain the auth middleware"
-  da "run tests for src/utils.js"
-  da "commit my staged changes with a good message"
-  da chat
+  da "run tests for src/utils.js" -m deepseek-chat
+  da chat --provider openrouter -m deepseek/deepseek-r1:free
   da config set api-key sk-ant-...
+  da config set deepseekApiKey sk-...
+  da config set model deepseek-chat
   da plugin add ./my-plugin.js
 
 SLASH COMMANDS (in chat)

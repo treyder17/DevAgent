@@ -1,7 +1,7 @@
-// src/core/agent.js — agentic loop with Claude tool use
+// src/core/agent.js — provider-agnostic agentic loop with tool use
 
-import Anthropic from '@anthropic-ai/sdk';
 import { TOOL_DEFINITIONS, runShell, readFile, writeFile } from '../tools/builtin.js';
+import { createProvider } from './providers.js';
 
 const MAX_ITERATIONS = 20; // safety limit for the tool loop
 
@@ -12,9 +12,9 @@ export class Agent {
     this.plugins = plugins;
     this.workdir = workdir;
     this.ui = ui;
-    this.history = []; // multi-turn conversation history
+    this.history = []; // provider-neutral multi-turn conversation history
 
-    this._client = new Anthropic({ apiKey: config.apiKey });
+    this._provider = createProvider(config);
     this._systemPrompt = this._buildSystemPrompt();
   }
 
@@ -114,7 +114,7 @@ ${codebaseCtx}
 
   /** Main chat entry — runs the full agentic loop */
   async chat(userMessage) {
-    this.history.push({ role: 'user', content: userMessage });
+    this.history.push({ role: 'user', text: userMessage });
 
     const spinner = this.ui.spinner('Thinking…');
     let iterations = 0;
@@ -124,56 +124,49 @@ ${codebaseCtx}
 
       let response;
       try {
-        response = await this._client.messages.create({
+        response = await this._provider.createMessage({
           model: this.config.model,
-          max_tokens: this.config.maxTokens,
+          maxTokens: this.config.maxTokens,
           system: this._systemPrompt,
           tools: this._allTools(),
-          messages: this.history,
+          history: this.history,
         });
       } catch (err) {
         spinner.fail('API error');
         throw err;
       }
 
-      // Collect text and tool_use blocks
-      const textBlocks = response.content.filter(b => b.type === 'text');
-      const toolBlocks = response.content.filter(b => b.type === 'tool_use');
+      const { text, toolCalls, stopReason } = response;
 
-      // Add assistant turn to history
-      this.history.push({ role: 'assistant', content: response.content });
+      // Add assistant turn to history (neutral format)
+      this.history.push({ role: 'assistant', text, toolCalls });
 
       // If we got text to show, print it
-      if (textBlocks.length > 0) {
+      if (text) {
         spinner.stop();
-        const text = textBlocks.map(b => b.text).join('\n');
         this.ui.assistantMessage(text);
       }
 
       // If no tool calls, we're done
-      if (toolBlocks.length === 0 || response.stop_reason === 'end_turn') {
+      if (!toolCalls || toolCalls.length === 0) {
         spinner.stop();
         break;
       }
 
       // Execute each tool call
       spinner.stop();
-      const toolResults = [];
-      for (const block of toolBlocks) {
-        const output = await this._executeTool(block.name, block.input);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: output,
-        });
+      const results = [];
+      for (const call of toolCalls) {
+        const output = await this._executeTool(call.name, call.input);
+        results.push({ id: call.id, output });
       }
 
       // Feed results back into the loop
-      this.history.push({ role: 'user', content: toolResults });
+      this.history.push({ role: 'tool', results });
       spinner.start('Thinking…');
 
-      if (response.stop_reason === 'tool_use') {
-        // Loop continues — Claude will process results
+      if (stopReason === 'tool_use') {
+        // Loop continues — the model will process the tool results
         continue;
       }
 

@@ -1,63 +1,124 @@
-# 🆓 Use DevAgent Completely for FREE (Puter.js Guide)
+# 🆓 Use DevAgent for FREE with DeepSeek
 
-This guide explains how to run DevAgent completely for free and without limits using **Claude Sonnet 4.6** via the **Puter.js** interface.
+DevAgent no longer depends on Puter. Instead it can talk to **any** provider —
+including **DeepSeek**, whose models you can run **for free**.
 
-You **do not need an official Anthropic API key** (`sk-ant-...`) and you don't need to purchase any API credits!
+There are two free/cheap ways to get DeepSeek:
+
+| Path | Cost | Key needed | Best for |
+|------|------|-----------|----------|
+| **OpenRouter** (recommended) | **100% free** models (`:free` tag) | free OpenRouter key | zero-cost usage |
+| **DeepSeek official API** | very cheap (pennies), small free credit | DeepSeek key | best quality / speed |
 
 ---
 
-## ⚠️ CRITICAL NOTICE BEFORE YOU START
+## ✅ Option A — Free DeepSeek via OpenRouter (recommended)
 
-Since you are running this tool in your terminal (Node.js) rather than a web browser, you must provide DevAgent with a free Puter Auth Token to authorize your requests. **Without this step, the tool will immediately crash with an unauthorized error!**
+OpenRouter hosts DeepSeek's models with a **free tier** — you pay nothing.
 
----
+### 1. Get a free OpenRouter API key
+1. Sign up at [openrouter.ai](https://openrouter.ai).
+2. Go to **Keys → Create Key** and copy it (`sk-or-...`).
 
-## 🛠️ Step-by-Step Setup Guide
-
-### 1. Install the Puter library in your project
-
-Open your terminal in the project directory and install the official Puter extension:
+### 2. Store the key and pick a free model
 
 ```bash
-npm install @heyputer/puter.js
+da config set openrouterApiKey sk-or-YOUR_KEY
+da config set model openai/gpt-oss-20b:free
 ```
 
-### 2. Get your free Puter Token
+The `:free` suffix is what makes it cost nothing.
 
-1. Create a free account on [puter.com](https://puter.com) (or log in if you already have one).
-2. Go to your Puter Dashboard and generate a JWT Auth Token (API Key). This token authenticates your terminal sessions.
+> ⚠️ **Which models are free changes over time.** OpenRouter regularly rotates
+> its free tier — DeepSeek's `:free` variants in particular come and go, and are
+> sometimes moved to paid-only. Don't hardcode a model name from a guide; list
+> what's *currently* free (and supports tools) yourself:
+>
+> ```bash
+> curl -s https://openrouter.ai/api/v1/models \
+>   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+> | python3 -c 'import sys,json; \
+> [print(m["id"]) for m in json.load(sys.stdin)["data"] \
+> if m["pricing"]["prompt"]=="0" and "tools" in m.get("supported_parameters",[])]'
+> ```
+>
+> Then `da config set model <one-of-those>`. If DeepSeek shows up free there,
+> great — use it. If not, any free tool-capable model works, or use the official
+> DeepSeek API below.
 
-### 3. Set the environment variable in your terminal
+> ℹ️ Tool-calling (file edits, running commands) needs a model that supports
+> function calling. Reasoning-only models sometimes don't. If the agent stops
+> using tools, switch to a chat/instruct model.
 
-Before launching DevAgent, you need to store your token in your terminal environment. Copy the appropriate command for your operating system:
-
-🪟 **Windows (Command Prompt / CMD):**
-```cmd
-set PUTER_AUTH_TOKEN=YOUR_JWT_TOKEN_HERE
-```
-
-🍎 **macOS / Linux / Git Bash:**
-```bash
-export PUTER_AUTH_TOKEN="YOUR_JWT_TOKEN_HERE"
-```
-
-🟦 **Windows (PowerShell):**
-```powershell
-$env:PUTER_AUTH_TOKEN="YOUR_JWT_TOKEN_HERE"
-```
-
-### 4. Launch DevAgent! 🚀
-
-Now you can start the tool as usual:
+### 3. Run it 🚀
 
 ```bash
 da
 ```
 
-Your DevAgent will now route all requests anonymously and completely free of charge through the Puter SDK to Claude Sonnet 4.6!
+Or without changing your config, just for one session:
+
+```bash
+da --provider openrouter -m deepseek/deepseek-chat-v3-0324:free
+```
 
 ---
 
-## 💡 Pro Tip for Power Users
+## 💸 Option B — DeepSeek official API (cheap, top quality)
 
-To avoid typing or pasting your token every time you open a new terminal window, add the `PUTER_AUTH_TOKEN` variable permanently to your **System Environment Variables** (Windows) or your shell configuration file like `~/.bashrc` or `~/.zshrc` (Mac/Linux)!
+### 1. Get a DeepSeek key
+1. Sign up at [platform.deepseek.com](https://platform.deepseek.com).
+2. Create an API key (`sk-...`). New accounts get free credit to start.
+
+### 2. Configure DevAgent
+
+```bash
+da config set deepseekApiKey sk-YOUR_KEY
+da config set model deepseek-chat
+```
+
+Available models:
+- `deepseek-chat` — DeepSeek-V3, fast, supports tools (recommended)
+- `deepseek-reasoner` — DeepSeek-R1, deep reasoning
+
+### 3. Run it 🚀
+
+```bash
+da
+```
+
+---
+
+## 🔁 Switching between providers
+
+DevAgent auto-detects the provider from the model name, so usually you only set
+the model:
+
+```bash
+da config set model claude-sonnet-4-6                       # -> Anthropic
+da config set model deepseek-chat                           # -> DeepSeek
+da config set model deepseek/deepseek-r1:free               # -> OpenRouter
+```
+
+You can also force it explicitly with `--provider` / `-p`, and override the
+endpoint with `--base-url` (e.g. a local OpenAI-compatible server):
+
+```bash
+da -p openai --base-url http://localhost:11434/v1 -m qwen2.5-coder
+```
+
+Each provider has its own stored key (`anthropicApiKey`, `deepseekApiKey`,
+`openrouterApiKey`, `openaiApiKey`), or you can use the matching env var
+(`ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`).
+
+---
+
+## 💡 Pro Tip
+
+To avoid setting the key every session, either store it in DevAgent's config
+(commands above, saved in `~/.devagent/config.json`) or export the env var
+permanently in your `~/.zshrc` / `~/.bashrc`:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-YOUR_KEY"
+```
