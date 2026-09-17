@@ -24,6 +24,7 @@ const DEFAULTS = {
   deepseekPort: 9222,
   deepseekHeadless: false,
   deepseekStabilityMs: 2500,                 // silence that counts as "answer done"
+  deepseekMaxPrimerChars: 24000,             // cap on the codebase context in turn 1
   deepseekFirstTokenTimeout: 180000,         // R1 can think for a while
   deepseekTimeout: 600000,
   ignorePatterns: [

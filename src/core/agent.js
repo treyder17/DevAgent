@@ -22,6 +22,15 @@ export class Agent {
     this.history = [];
   }
 
+  /**
+   * Release provider resources. Browser-backed providers hold an open
+   * DevTools socket, which keeps the Node event loop alive after the last
+   * answer — without this, `da "…"` prints its result and never exits.
+   */
+  async dispose() {
+    await this._provider?.close?.();
+  }
+
   /** List models available from the current provider. */
   async listModels() {
     return this._provider.listModels();

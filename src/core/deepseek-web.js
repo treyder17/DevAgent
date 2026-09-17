@@ -17,6 +17,13 @@ import { buildToolPrompt, parseToolCall, stripToolCall, formatToolResult } from 
 const CHAT_URL = 'https://chat.deepseek.com/';
 const URL_MATCH = /chat\.deepseek\.com/;
 
+// An assistant reply is ONE container. `[class*="ds-markdown"]` also matches its
+// paragraphs and inline spans — taking the last of those yields a fragment like
+// "<END>" instead of the message, so the container class is matched exactly.
+const REPLY_SELECTOR = '.ds-markdown:not([class*="ds-markdown-"])';
+const REPLY_FALLBACK = '[class*="ds-assistant-message"], [class*="ds-markdown"]';
+const INPUT_SELECTOR = '#chat-input, textarea[placeholder], textarea';
+
 export const WEB_MODELS = {
   'deepseek-web':       { think: false, label: 'DeepSeek-V3 (free web chat)' },
   'deepseek-web-think': { think: true,  label: 'DeepSeek-R1 / DeepThink (free web chat)' },
@@ -64,6 +71,7 @@ export class DeepSeekWebProvider {
       firstTokenTimeout: Number(config.deepseekFirstTokenTimeout) || 180000,
       hardTimeout: Number(config.deepseekTimeout) || 600000,
       stabilityMs: Number(config.deepseekStabilityMs) || 2500,
+      maxPrimerChars: Number(config.deepseekMaxPrimerChars) || 24000,
     };
   }
 
@@ -108,12 +116,12 @@ export class DeepSeekWebProvider {
 
   async isLoggedIn() {
     if (!this.page) return false;
-    return this.page.evaluate(() => !!document.querySelector('#chat-input, textarea')).catch(() => false);
+    return this.page.evaluate(sel => !!document.querySelector(sel), INPUT_SELECTOR).catch(() => false);
   }
 
   async _requireLogin() {
     const ok = await this.page
-      .waitForSelector('#chat-input, textarea', { timeout: 20000 })
+      .waitForSelector(INPUT_SELECTOR, { timeout: 20000 })
       .then(() => true)
       .catch(() => false);
     if (!ok) {
@@ -215,24 +223,11 @@ export class DeepSeekWebProvider {
   // ---- messaging --------------------------------------------------------
 
   async _send(text) {
-    const before = await this._blockCount();
-
-    await this.page.evaluate((value) => {
-      const el = document.querySelector('#chat-input') || document.querySelector('textarea');
-      if (!el) throw new Error('chat input not found');
-      el.focus();
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
-      ).set;
-      setter.call(el, value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, text);
-
-    await new Promise(r => setTimeout(r, 150));
-    await this.page.keyboard.press('Enter');
-
-    await this._waitForNewBlock(before);
-    const reply = await this._waitForStableReply();
+    const before = await this._readLastBlock();
+    await this._fillInput(text);
+    await this._submit();
+    await this._waitForReplyStart(before);
+    const reply = await this._waitForStableReply(before);
 
     if (WEB_MODELS[this.modelId].think && !this.thinkVerified) {
       this.thinkVerified = true;
@@ -249,19 +244,80 @@ export class DeepSeekWebProvider {
     return reply;
   }
 
-  async _blockCount() {
-    return this.page.evaluate(
-      () => document.querySelectorAll('.ds-markdown, [class*="ds-markdown"]').length
-    );
+  async _fillInput(text) {
+    await this.page.bringToFront().catch(() => {});
+    await this.page.evaluate((value, sel) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error('chat input not found');
+      el.focus();
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value'
+      ).set;
+      setter.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, text, INPUT_SELECTOR);
+    await this.page.focus(INPUT_SELECTOR).catch(() => {});
+    await new Promise(r => setTimeout(r, 200));
   }
 
-  async _waitForNewBlock(before) {
+  /** Whether the composer still holds text (i.e. nothing was sent yet). */
+  async _inputPending() {
+    return this.page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return !!el && el.value.trim().length > 0;
+    }, INPUT_SELECTOR);
+  }
+
+  /**
+   * Enter alone is unreliable — a background tab or a re-render can swallow the
+   * keypress and the prompt just sits in the box. So: press Enter, verify, and
+   * fall back to the composer's send button (the filled primary one).
+   */
+  async _submit() {
+    await this.page.keyboard.press('Enter').catch(() => {});
+    if (!(await this._waitUntilSent())) {
+      const clicked = await this.page.evaluate((sel) => {
+        const input = document.querySelector(sel);
+        if (!input) return false;
+        const box = input.closest('div')?.parentElement?.parentElement || document.body;
+        const buttons = [...box.querySelectorAll('div[role="button"],button,.ds-button')];
+        const send = buttons.reverse().find(el =>
+          el.classList.contains('ds-button--primary') ||
+          /send/i.test(el.getAttribute('aria-label') || '')
+        );
+        if (!send) return false;
+        send.click();
+        return true;
+      }, INPUT_SELECTOR);
+      if (!clicked || !(await this._waitUntilSent())) {
+        throw new Error('Could not submit the prompt to chat.deepseek.com (the composer still holds it).');
+      }
+    }
+  }
+
+  async _waitUntilSent(timeoutMs = 4000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!(await this._inputPending())) return true;
+      await new Promise(r => setTimeout(r, 250));
+    }
+    return false;
+  }
+
+  /**
+   * Wait for a NEW answer to appear. Counting reply containers does not work:
+   * the app recycles older messages out of the DOM, so the count can stay flat
+   * or even drop across turns. Comparing the newest container's content does.
+   */
+  async _waitForReplyStart(before) {
     const deadline = Date.now() + this.opts.firstTokenTimeout;
     while (Date.now() < deadline) {
-      if ((await this._blockCount()) > before) return;
+      const cur = await this._readLastBlock();
+      if (cur.text && (cur.text !== before.text || cur.count !== before.count)) return cur;
+
       const problem = await this.page.evaluate(() => {
         const t = document.body.innerText || '';
-        if (/server is busy/i.test(t)) return 'DeepSeek says the server is busy — try again in a moment.';
+        if (/server is busy/i.test(t)) return 'DeepSeek says the server is busy - try again in a moment.';
         if (/reached the limit|message limit/i.test(t)) return 'DeepSeek message limit reached for now.';
         return null;
       });
@@ -271,7 +327,7 @@ export class DeepSeekWebProvider {
     throw new Error('DeepSeek did not start answering in time.');
   }
 
-  async _waitForStableReply() {
+  async _waitForStableReply(before) {
     const deadline = Date.now() + this.opts.hardTimeout;
     let last = '';
     let lastCount = -1;
@@ -279,6 +335,11 @@ export class DeepSeekWebProvider {
 
     while (Date.now() < deadline) {
       const { text, count } = await this._readLastBlock();
+      // Still showing the previous turn's answer: not our reply yet.
+      if (text === before.text && count === before.count) {
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
       if (count !== lastCount || text !== last) {
         last = text;
         lastCount = count;
@@ -294,8 +355,9 @@ export class DeepSeekWebProvider {
 
   /** Read the newest assistant block and serialize its DOM back into markdown. */
   async _readLastBlock() {
-    return this.page.evaluate(() => {
-      const blocks = document.querySelectorAll('.ds-markdown, [class*="ds-markdown"]');
+    return this.page.evaluate((sel, fallback) => {
+      let blocks = document.querySelectorAll(sel);
+      if (!blocks.length) blocks = document.querySelectorAll(fallback);
       const count = blocks.length;
       const root = blocks[count - 1];
       if (!root) return { text: '', count };
@@ -366,6 +428,6 @@ export class DeepSeekWebProvider {
         .replace(/\n{3,}/g, '\n\n')
         .trim();
       return { text, count };
-    });
+    }, REPLY_SELECTOR, REPLY_FALLBACK);
   }
 }

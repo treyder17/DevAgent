@@ -155,7 +155,8 @@ async function runChat(argv) {
     rl.prompt();
   });
 
-  rl.on('close', () => {
+  rl.on('close', async () => {
+    await agent.dispose();
     ui.print('\nGoodbye!');
     process.exit(0);
   });
@@ -178,7 +179,11 @@ async function runOneShot(prompt, argv) {
   await plugins.loadAll();
 
   const agent = new Agent({ config, codebaseIndex, plugins, workdir, ui });
-  await agent.chat(prompt);
+  try {
+    await agent.chat(prompt);
+  } finally {
+    await agent.dispose();
+  }
 }
 
 async function handleSlashCommand(input, agent, ui, rl) {

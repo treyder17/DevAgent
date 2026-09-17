@@ -2,6 +2,19 @@
 
 import chalk from 'chalk';
 import ora from 'ora';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+// Single source of truth for the version: package.json.
+const VERSION = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return JSON.parse(readFileSync(join(here, '../../package.json'), 'utf8')).version;
+  } catch {
+    return '?';
+  }
+})();
 
 // DevAgent color palette
 const C = {
@@ -43,7 +56,7 @@ export class UI {
       C.brand('  ╚═════╝ ╚══════╝  ╚═══╝  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ')
     );
     console.log('');
-    console.log(C.muted('  AI coding assistant for your terminal  ') + C.assist('da') + C.muted(' v1.0.0'));
+    console.log(C.muted('  AI coding assistant for your terminal  ') + C.assist('da') + C.muted(' v' + VERSION));
     console.log('');
   }
 
