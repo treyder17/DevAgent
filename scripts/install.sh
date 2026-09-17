@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # DevAgent installer for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/your-repo/devagent/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/treyder17/DevAgent/main/scripts/install.sh | bash
 
 set -e
 
-REPO="your-repo/devagent"
+REPO="treyder17/DevAgent"
 INSTALL_DIR="$HOME/.devagent"
 BIN_LINK="/usr/local/bin/da"
 
@@ -84,9 +84,9 @@ echo ""
 success "DevAgent installed successfully!"
 echo ""
 echo -e "  Next steps:"
-echo -e "  ${CYAN}da config set api-key YOUR_ANTHROPIC_KEY${NC}"
+echo -e "  ${CYAN}da deepseek login${NC}   — free DeepSeek, no API key"
 echo -e "  ${CYAN}da${NC}   — start interactive chat"
 echo -e "  ${CYAN}da \"explain this codebase\"${NC}   — one-shot query"
 echo ""
-echo -e "  Get an API key at: https://console.anthropic.com"
+echo -e "  Or bring your own key: ${CYAN}da config set api-key YOUR_KEY${NC}"
 echo ""

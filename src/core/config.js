@@ -17,6 +17,15 @@ const DEFAULTS = {
   maxFileSizeKb: 100,
   maxIndexFiles: 2000,
   pluginsDir: join(CONFIG_DIR, 'plugins'),
+
+  // Browser bridge for the key-free deepseek-web provider
+  chromePath: null,                          // '' = auto-detect
+  deepseekProfile: join(CONFIG_DIR, 'chrome-profile'),
+  deepseekPort: 9222,
+  deepseekHeadless: false,
+  deepseekStabilityMs: 2500,                 // silence that counts as "answer done"
+  deepseekFirstTokenTimeout: 180000,         // R1 can think for a while
+  deepseekTimeout: 600000,
   ignorePatterns: [
     'node_modules', '.git', 'dist', 'build', '.next', '.nuxt',
     '__pycache__', '.pytest_cache', 'venv', '.venv', 'env',
@@ -74,9 +83,13 @@ async function load(argv) {
   //   2. provider-specific stored key, e.g. deepseekApiKey
   //   3. generic stored apiKey
   //   4. provider-specific env var, e.g. DEEPSEEK_API_KEY
-  const providerKeyField = `${cfg.provider}ApiKey`;
-  if (!cfg.apiKey && cfg[providerKeyField]) cfg.apiKey = cfg[providerKeyField];
-  if (!cfg.apiKey) cfg.apiKey = process.env[preset.envKey];
+  // Keyless providers (browser bridges) skip this entirely.
+  if (!preset.keyless) {
+    const providerKeyField = `${cfg.provider}ApiKey`;
+    if (!cfg.apiKey && cfg[providerKeyField]) cfg.apiKey = cfg[providerKeyField];
+    if (!cfg.apiKey) cfg.apiKey = process.env[preset.envKey];
+  }
+  cfg.keyless = !!preset.keyless;
 
   return cfg;
 }

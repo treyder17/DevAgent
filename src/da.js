@@ -3,7 +3,7 @@
 // MIT License
 
 import { createInterface } from 'readline';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
@@ -15,6 +15,11 @@ import { PluginManager } from './core/plugins.js';
 import { UI } from './ui/ui.js';
 import { CONFIG } from './core/config.js';
 import { PROVIDERS, createProvider } from './core/providers.js';
+import { DeepSeekWebProvider, resolveWebModel } from './core/deepseek-web.js';
+import {
+  getBrowser, getPage, defaultProfileDir, findChrome,
+  browsersDir, managedFreeChrome, chromeRunning, profilePolicyActive,
+} from './core/browser.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -27,10 +32,13 @@ function missingKeyMessage(provider) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const argv = minimist(process.argv.slice(2), {
-  boolean: ['help', 'version', 'no-index', 'verbose'],
+  boolean: ['help', 'version', 'no-index', 'verbose', 'think', 'force'],
   string: ['api-key', 'model', 'cwd', 'provider', 'base-url'],
-  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider' },
+  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider', t: 'think' },
 });
+
+// --think is a shortcut for the key-free DeepThink model.
+if (argv.think && !argv.model) argv.model = 'deepseek-web-think';
 
 async function main() {
   if (argv.version) {
@@ -67,6 +75,11 @@ async function main() {
     return;
   }
 
+  if (cmd === 'deepseek') {
+    await handleDeepSeek(args);
+    return;
+  }
+
   // One-shot mode: da "explain this function"
   if (cmd && cmd !== 'chat') {
     const prompt = [cmd, ...args].join(' ');
@@ -83,10 +96,11 @@ async function runChat(argv) {
   ui.banner();
 
   const config = await CONFIG.load(argv);
-  if (!config.apiKey) {
+  if (!config.apiKey && !config.keyless) {
     ui.error(missingKeyMessage(config.provider));
     process.exit(1);
   }
+  config.ui = ui;
 
   const workdir = resolve(argv.cwd || process.cwd());
   ui.info(`Working directory: ${workdir}`);
@@ -150,10 +164,11 @@ async function runChat(argv) {
 async function runOneShot(prompt, argv) {
   const ui = new UI({ quiet: true });
   const config = await CONFIG.load(argv);
-  if (!config.apiKey) {
+  if (!config.apiKey && !config.keyless) {
     ui.error(missingKeyMessage(config.provider));
     process.exit(1);
   }
+  config.ui = ui;
 
   const workdir = resolve(argv.cwd || process.cwd());
   const codebaseIndex = argv['no-index'] ? null : new CodebaseIndex(workdir);
@@ -290,7 +305,7 @@ async function handleIndex(args) {
 async function handleModels(args, argv) {
   const ui = new UI();
   const config = await CONFIG.load(argv);
-  if (!config.apiKey) {
+  if (!config.apiKey && !config.keyless) {
     ui.error(missingKeyMessage(config.provider));
     process.exit(1);
   }
@@ -335,6 +350,129 @@ async function handleModels(args, argv) {
   if (shouldFilterFree) ui.print(`See every model (incl. paid) with:  da models --all`);
 }
 
+// ---- DeepSeek web bridge (no API key) ------------------------------------
+
+async function handleDeepSeek(args) {
+  const ui = new UI();
+  const [action = 'status'] = args;
+  const config = await CONFIG.load({ ...argv, provider: 'deepseek-web' });
+  const profileDir = config.deepseekProfile || defaultProfileDir();
+  const port = Number(config.deepseekPort) || 9222;
+
+  if (action === 'install-browser') {
+    const { install, resolveBuildId, computeExecutablePath, detectBrowserPlatform, Browser } =
+      await import('@puppeteer/browsers');
+    const cacheDir = browsersDir();
+    const spinner = ui.spinner('Resolving Chrome for Testing…');
+    try {
+      const platform = detectBrowserPlatform();
+      const buildId = await resolveBuildId(Browser.CHROME, platform, 'stable');
+      spinner.text = `Downloading Chrome for Testing ${buildId} (~150 MB)…`;
+      await install({ browser: Browser.CHROME, buildId, cacheDir });
+      const exe = computeExecutablePath({ browser: Browser.CHROME, buildId, cacheDir, platform });
+      CONFIG.set('chromePath', exe);
+      spinner.succeed(`Installed: ${exe}`);
+      ui.success('Saved as chromePath — this build ignores enterprise policies.');
+      ui.print('Next:  da deepseek login');
+    } catch (err) {
+      spinner.fail(`Download failed: ${err.message}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (action === 'login') {
+    if (!findChrome(config.chromePath)) {
+      ui.error('Chrome not found. Install it, or run: da deepseek install-browser');
+      process.exit(1);
+    }
+    ui.info(`Opening chat.deepseek.com · profile: ${profileDir}`);
+    let browser;
+    try {
+      ({ browser } = await getBrowser({
+        port,
+        profileDir,
+        headless: false,
+        chromePath: config.chromePath || null,
+        startUrl: 'https://chat.deepseek.com/',
+      }));
+    } catch (err) {
+      ui.error(err.message);
+      process.exit(1);
+    }
+    const page = await getPage(browser, /chat\.deepseek\.com/, 'https://chat.deepseek.com/');
+
+    ui.print('');
+    ui.print('Sign in in the Chrome window — a free DeepSeek account is enough, no API key.');
+    ui.print('Waiting for the chat input to appear…  (Ctrl+C to abort)');
+
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let ok = false;
+    while (Date.now() < deadline) {
+      ok = await page.evaluate(() => !!document.querySelector('#chat-input, textarea')).catch(() => false);
+      if (ok) break;
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    await browser.disconnect();
+
+    if (ok) {
+      ui.success('Logged in — the session is stored in the profile.');
+      ui.print('Try it:  da -m deepseek-web "hello"   ·   da --think "hello"');
+    } else {
+      ui.warn('No logged-in chat detected within 5 minutes. Leave Chrome open and retry.');
+    }
+    return;
+  }
+
+  if (action === 'status') {
+    const hasProfile = existsSync(join(profileDir, 'Default', 'Preferences'));
+    ui.print(`Profile:  ${profileDir}`);
+    ui.print(`Session:  ${hasProfile ? 'stored' : 'none — run: da deepseek login'}`);
+    ui.print(`Chrome:   ${findChrome(config.chromePath) || '(not found)'}`);
+    ui.print(`Isolated: ${managedFreeChrome() || 'no — run: da deepseek install-browser'}`);
+    ui.print(`Port:     ${port}`);
+    ui.print(`Headless: ${config.deepseekHeadless === true || config.deepseekHeadless === 'true'}`);
+    if (profilePolicyActive()) {
+      ui.warn('A Chrome policy pins the profile directory — use the isolated browser, or close all Chrome windows first.');
+    } else if (chromeRunning() && !managedFreeChrome()) {
+      ui.warn('Chrome is running — close it before "da deepseek login", or install the isolated browser.');
+    }
+    return;
+  }
+
+  if (action === 'test') {
+    const model = resolveWebModel(argv.model) || (argv.think ? 'deepseek-web-think' : 'deepseek-web');
+    const provider = new DeepSeekWebProvider({ model, config, ui });
+    const spinner = ui.spinner(`Asking ${provider.label}…`);
+    try {
+      await provider.init();
+      const reply = await provider._send('Reply with exactly: DevAgent bridge OK');
+      spinner.succeed('Round trip complete');
+      ui.assistantMessage(reply);
+    } catch (err) {
+      spinner.fail(err.message);
+      process.exitCode = 1;
+    } finally {
+      await provider.close();
+    }
+    return;
+  }
+
+  if (action === 'logout') {
+    if (!argv.force) {
+      ui.print(`This deletes the browser profile at:
+  ${profileDir}`);
+      ui.print('Confirm with:  da deepseek logout --force');
+      return;
+    }
+    rmSync(profileDir, { recursive: true, force: true });
+    ui.success('DeepSeek browser session removed.');
+    return;
+  }
+
+  ui.print('Usage: da deepseek <install-browser|login|status|test|logout>');
+}
+
 function printHelp() {
   console.log(`
 DevAgent (da) — AI coding assistant for your terminal
@@ -345,13 +483,16 @@ USAGE
   da config <action>       Manage configuration
   da plugin <action>       Manage plugins
   da models [--all]        List available models (free ones by default)
+  da deepseek <action>     Key-free DeepSeek bridge:
+                           install-browser | login | status | test | logout
   da index [dir]           Index a directory
 
 OPTIONS
   -k, --api-key KEY        API key for the active provider (overrides config)
   -m, --model MODEL        Model to use (default: claude-sonnet-4-6)
-  -p, --provider NAME      Provider: anthropic | deepseek | openrouter | openai
-                           (default: auto-detected from the model name)
+  -p, --provider NAME      Provider: deepseek-web | anthropic | deepseek |
+                           openrouter | openai (default: from the model name)
+  -t, --think              Key-free DeepThink (same as -m deepseek-web-think)
   --base-url URL           Override the provider endpoint (self-hosted / proxy)
   --cwd DIR                Working directory
   --no-index               Skip codebase indexing
@@ -360,11 +501,17 @@ OPTIONS
   -h, --help               Show this help
 
 PROVIDERS & MODELS
+  deepseek-web  deepseek-web, deepseek-web-think           (NO KEY — browser)
   anthropic   claude-sonnet-4-6, claude-opus-4-6, …        (ANTHROPIC_API_KEY)
   deepseek    deepseek-chat, deepseek-reasoner             (DEEPSEEK_API_KEY)
   openrouter  deepseek/deepseek-chat-v3-0324:free, …       (OPENROUTER_API_KEY)
   openai      gpt-4o, gpt-4o-mini, …                       (OPENAI_API_KEY)
   The provider is auto-detected from the model name, or set it explicitly.
+
+NO API KEY? START HERE
+  da deepseek login                       sign in once to the free web chat
+  da -m deepseek-web "explain this repo"  DeepSeek-V3, no key, no billing
+  da --think "why does this test flake?"  DeepSeek-R1 with DeepThink on
 
 EXAMPLES
   da "explain the auth middleware"

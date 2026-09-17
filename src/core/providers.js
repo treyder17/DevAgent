@@ -15,6 +15,7 @@
 //   -> { text, toolCalls: [{ id, name, input }], stopReason }
 
 import Anthropic from '@anthropic-ai/sdk';
+import { DeepSeekWebProvider } from './deepseek-web.js';
 
 // Known providers. `type` picks the wire protocol; `openai` covers every
 // OpenAI-compatible endpoint (DeepSeek, OpenRouter, OpenAI, local servers…).
@@ -43,10 +44,19 @@ export const PROVIDERS = {
     envKey: 'OPENAI_API_KEY',
     defaultModel: 'gpt-4o-mini',
   },
+  // No API key at all: drives the free chat.deepseek.com web app in a browser.
+  'deepseek-web': {
+    type: 'browser',
+    baseUrl: 'https://chat.deepseek.com',
+    envKey: null,
+    defaultModel: 'deepseek-web',
+    keyless: true,
+  },
 };
 
 /**
  * Guess which provider a model belongs to, when not set explicitly.
+ *   deepseek-web*       -> deepseek-web (browser bridge, no key)
  *   claude-*            -> anthropic
  *   deepseek-*          -> deepseek (official API)
  *   vendor/model[:tag]  -> openrouter (their models are namespaced)
@@ -55,6 +65,7 @@ export const PROVIDERS = {
 export function detectProvider(model) {
   if (!model) return 'anthropic';
   const m = model.toLowerCase();
+  if (m.startsWith('deepseek-web') || m === 'deepthink') return 'deepseek-web';
   if (m.startsWith('claude')) return 'anthropic';
   if (m.startsWith('deepseek-')) return 'deepseek';
   if (m.includes('/')) return 'openrouter';
@@ -78,6 +89,9 @@ export function createProvider(config) {
   const baseUrl = (config.baseUrl || preset.baseUrl).replace(/\/+$/, '');
   const apiKey = config.apiKey;
 
+  if (preset.type === 'browser') {
+    return new DeepSeekWebProvider({ name, model: config.model, config, ui: config.ui });
+  }
   if (preset.type === 'anthropic') {
     return new AnthropicProvider({ name, apiKey, baseUrl, verbose: config.verbose });
   }

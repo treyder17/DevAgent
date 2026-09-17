@@ -1,8 +1,8 @@
 # DevAgent installer for Windows (PowerShell)
-# Usage: iwr -useb https://raw.githubusercontent.com/your-repo/devagent/main/scripts/install.ps1 | iex
+# Usage: iwr -useb https://raw.githubusercontent.com/treyder17/DevAgent/main/scripts/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
-$REPO = "your-repo/devagent"
+$REPO = "treyder17/DevAgent"
 $InstallDir = "$env:USERPROFILE\.devagent\src"
 
 function Write-Info    { param($m) Write-Host "  i  $m" -ForegroundColor Cyan }
@@ -87,9 +87,9 @@ Write-Host ""
 Write-Success "DevAgent installed successfully!"
 Write-Host ""
 Write-Host "  Next steps (restart your terminal first):" -ForegroundColor White
-Write-Host "  da config set api-key YOUR_ANTHROPIC_KEY" -ForegroundColor Cyan
+Write-Host "  da deepseek login                         -- free DeepSeek, no API key" -ForegroundColor Cyan
 Write-Host "  da                                        -- start interactive chat" -ForegroundColor Cyan
 Write-Host "  da `"explain this codebase`"               -- one-shot query" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Get an API key at: https://console.anthropic.com" -ForegroundColor White
+Write-Host "  Or bring your own key: da config set api-key YOUR_KEY" -ForegroundColor White
 Write-Host ""

@@ -4,7 +4,23 @@
 
 DevAgent gives you an AI assistant that understands your entire project and can take real actions: run tests, write code, manage git, and more — all from a single `da` command.
 
-It works with multiple model providers — **Anthropic (Claude)**, **DeepSeek**, **OpenRouter**, and any **OpenAI-compatible** endpoint. Want to run it for free? See **[USEFREE.md](./USEFREE.md)** for free DeepSeek models.
+It works with multiple model providers — **Anthropic (Claude)**, **DeepSeek**, **OpenRouter**, and any **OpenAI-compatible** endpoint.
+
+**Or with no API key at all.** The `deepseek-web` provider drives the free
+[chat.deepseek.com](https://chat.deepseek.com) web app in a browser you sign into once:
+
+| Model | What it is |
+|-------|------------|
+| `deepseek-web` | DeepSeek-V3 — the free chat model |
+| `deepseek-web-think` | DeepSeek-R1 — the same chat with **DeepThink** switched on |
+
+```bash
+da deepseek login                       # once, in a Chrome window
+da -m deepseek-web "explain this repo"
+da --think "why does this test flake?"  # DeepThink / R1
+```
+
+See **[USEFREE.md](./USEFREE.md)** for all the free routes.
 
 ---
 
@@ -12,17 +28,17 @@ It works with multiple model providers — **Anthropic (Claude)**, **DeepSeek**,
 
 ### macOS / Linux
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-repo/devagent/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/treyder17/DevAgent/main/scripts/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 ```powershell
-iwr -useb https://raw.githubusercontent.com/your-repo/devagent/main/scripts/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/treyder17/DevAgent/main/scripts/install.ps1 | iex
 ```
 
 ### Manual (any platform with Node.js 18+)
 ```bash
-git clone https://github.com/your-repo/devagent.git ~/.devagent/src
+git clone https://github.com/treyder17/DevAgent.git ~/.devagent/src
 cd ~/.devagent/src && npm install
 # Add to PATH: alias da="node ~/.devagent/src/src/da.js"
 ```
@@ -30,6 +46,33 @@ cd ~/.devagent/src && npm install
 ---
 
 ## Setup
+
+### No key: DeepSeek in your browser
+
+```bash
+da deepseek login          # opens Chrome, sign in to your free DeepSeek account
+da config set model deepseek-web        # or deepseek-web-think for DeepThink
+da "what does this codebase do?"
+```
+
+DevAgent opens `chat.deepseek.com` in its own Chrome profile
+(`~/.devagent/chrome-profile`), types prompts into the real chat and reads the answers
+back — the login is stored, so you do it once.
+
+```bash
+da deepseek status           # profile, browser, port
+da deepseek test             # one round trip through the bridge
+da deepseek install-browser  # isolated Chrome, for managed machines
+da deepseek logout --force   # forget the stored session
+```
+
+If `da deepseek login` reports that no debugging port opened, a running Chrome — or a
+managed `UserDataDir` policy — swallowed the new window. Close all Chrome windows and
+retry, or run `da deepseek install-browser` once: it downloads a standalone
+*Chrome for Testing* build to `~/.devagent/browsers` that ignores enterprise policies
+and runs beside your normal Chrome.
+
+### With a key
 
 Pick a provider and set its key. DevAgent auto-detects the provider from the model name.
 
@@ -51,7 +94,8 @@ da config set model deepseek/deepseek-chat-v3-0324:free
 ```
 
 Each provider also reads its matching env var automatically: `ANTHROPIC_API_KEY`,
-`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`.
+`DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`. The `deepseek-web`
+provider needs none of them.
 
 ---
 

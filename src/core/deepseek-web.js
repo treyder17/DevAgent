@@ -1,0 +1,371 @@
+// src/core/deepseek-web.js — DeepSeek with no API key at all.
+//
+// Instead of an HTTP endpoint this provider drives the free chat.deepseek.com
+// web app in a Chrome profile you log into once. It exposes the same interface
+// as the HTTP providers in providers.js, so the agent loop cannot tell the
+// difference:
+//
+//   createMessage({ system, tools, history, model }) -> { text, toolCalls, stopReason }
+//
+// Two models, matching the two things the free web UI can do:
+//   deepseek-web        DeepSeek-V3, DeepThink off
+//   deepseek-web-think  DeepSeek-R1, DeepThink on
+
+import { getBrowser, getPage, defaultProfileDir } from './browser.js';
+import { buildToolPrompt, parseToolCall, stripToolCall, formatToolResult } from './text-tools.js';
+
+const CHAT_URL = 'https://chat.deepseek.com/';
+const URL_MATCH = /chat\.deepseek\.com/;
+
+export const WEB_MODELS = {
+  'deepseek-web':       { think: false, label: 'DeepSeek-V3 (free web chat)' },
+  'deepseek-web-think': { think: true,  label: 'DeepSeek-R1 / DeepThink (free web chat)' },
+};
+
+const ALIASES = {
+  'deepseek-web-chat': 'deepseek-web',
+  'deepseek-web-v3': 'deepseek-web',
+  'deepseek-web-r1': 'deepseek-web-think',
+  'deepseek-web-reasoner': 'deepseek-web-think',
+  'deepthink': 'deepseek-web-think',
+  // Accepted when the provider is already deepseek-web.
+  'deepseek-chat': 'deepseek-web',
+  'deepseek-reasoner': 'deepseek-web-think',
+};
+
+export function resolveWebModel(name) {
+  const key = String(name || '').toLowerCase().trim();
+  const id = ALIASES[key] || key;
+  return WEB_MODELS[id] ? id : null;
+}
+
+export class DeepSeekWebProvider {
+  constructor({ name = 'deepseek-web', model, config = {}, ui = null } = {}) {
+    this.name = name;
+    this.ui = ui;
+    this.config = config;
+    this.modelId = resolveWebModel(model) || 'deepseek-web';
+    this.verbose = config.verbose;
+
+    this.browser = null;
+    this.page = null;
+    this.ready = false;
+    this.primed = false;          // system prompt + tool docs sent?
+    this.thinking = null;         // DeepThink state we last applied
+    this.thinkVerified = false;
+    this._callSeq = 0;
+    this._pendingToolName = null;
+
+    this.opts = {
+      port: Number(config.deepseekPort) || 9222,
+      profileDir: config.deepseekProfile || defaultProfileDir(),
+      headless: config.deepseekHeadless === true || config.deepseekHeadless === 'true',
+      chromePath: config.chromePath || null,
+      firstTokenTimeout: Number(config.deepseekFirstTokenTimeout) || 180000,
+      hardTimeout: Number(config.deepseekTimeout) || 600000,
+      stabilityMs: Number(config.deepseekStabilityMs) || 2500,
+    };
+  }
+
+  get label() {
+    return WEB_MODELS[this.modelId].label;
+  }
+
+  /** The web UI has exactly these two free modes. */
+  async listModels() {
+    return Object.keys(WEB_MODELS).map(id => ({ id, free: true, tools: true, hasPricing: false }));
+  }
+
+  // ---- session ----------------------------------------------------------
+
+  async init({ newThread = true } = {}) {
+    if (this.ready) return this;
+    const { browser } = await getBrowser({
+      port: this.opts.port,
+      profileDir: this.opts.profileDir,
+      headless: this.opts.headless,
+      chromePath: this.opts.chromePath,
+      startUrl: CHAT_URL,
+    });
+    this.browser = browser;
+    this.page = await getPage(browser, URL_MATCH, CHAT_URL);
+
+    if (newThread || !URL_MATCH.test(this.page.url())) {
+      await this.page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    }
+    await this._requireLogin();
+    this.ready = true;
+    return this;
+  }
+
+  async close({ closeBrowser = false } = {}) {
+    try {
+      if (closeBrowser && this.browser) await this.browser.close();
+      else if (this.browser) await this.browser.disconnect();
+    } catch { /* browser already gone */ }
+    this.ready = false;
+  }
+
+  async isLoggedIn() {
+    if (!this.page) return false;
+    return this.page.evaluate(() => !!document.querySelector('#chat-input, textarea')).catch(() => false);
+  }
+
+  async _requireLogin() {
+    const ok = await this.page
+      .waitForSelector('#chat-input, textarea', { timeout: 20000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) {
+      throw new Error(
+        'Not logged in to chat.deepseek.com.\n' +
+        '  Run: da deepseek login   (sign in once in the Chrome window, free account is enough)'
+      );
+    }
+  }
+
+  // ---- provider interface ----------------------------------------------
+
+  async createMessage({ system, tools, history, model }) {
+    const wanted = resolveWebModel(model) || this.modelId;
+    if (wanted !== this.modelId) {
+      this.modelId = wanted;
+      this.thinkVerified = false;
+    }
+
+    await this.init({ newThread: !this.ready });
+    await this._applyThinking(WEB_MODELS[this.modelId].think);
+
+    const outgoing = this._composeTurn({ system, tools, history });
+    const reply = await this._send(outgoing);
+
+    const call = parseToolCall(reply);
+    const text = stripToolCall(reply);
+    this._pendingToolName = call?.name ?? null;
+
+    return {
+      text,
+      toolCalls: call ? [{ id: `web-${++this._callSeq}`, name: call.name, input: call.input }] : [],
+      stopReason: call ? 'tool_use' : 'end_turn',
+    };
+  }
+
+  /**
+   * The web chat keeps the conversation itself, so only the newest turn is
+   * sent — with the system prompt and tool docs prepended on the first call.
+   */
+  _composeTurn({ system, tools, history }) {
+    const last = history[history.length - 1];
+
+    if (last?.role === 'tool') {
+      return last.results
+        .map(r => formatToolResult(this._pendingToolName || 'tool', r.output))
+        .join('\n\n');
+    }
+
+    const userText = last?.text ?? '';
+    if (this.primed) return userText;
+
+    this.primed = true;
+    return `${system}\n${buildToolPrompt(tools)}\n\n---\nThe developer's first request follows.\n\n${userText}`;
+  }
+
+  // ---- DeepThink toggle -------------------------------------------------
+
+  async _applyThinking(want) {
+    if (this.thinking === want) return;
+    const state = await this.page.evaluate((want) => {
+      const isBlueish = (css) => {
+        const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(css || '');
+        if (!m) return false;
+        const r = +m[1], g = +m[2], b = +m[3];
+        return b > r + 35 && b > g + 35;
+      };
+      const wanted = /deepthink|deep think|tiefes denken/i;
+      const hits = [...document.querySelectorAll('button,[role="button"],div,span')].filter((el) => {
+        const t = (el.textContent || '').trim();
+        return t.length > 0 && t.length < 40 && wanted.test(t);
+      });
+      if (!hits.length) return { found: false };
+
+      const el = hits[hits.length - 1];
+      const target = el.closest('button,[role="button"]') || el;
+      const pressed = target.getAttribute('aria-pressed');
+      const active = pressed !== null
+        ? pressed === 'true'
+        : (() => {
+            const cs = getComputedStyle(target);
+            return isBlueish(cs.color) || isBlueish(cs.backgroundColor);
+          })();
+
+      if (active !== want) {
+        target.click();
+        return { found: true, clicked: true };
+      }
+      return { found: true, clicked: false };
+    }, want);
+
+    if (!state.found && want) {
+      this.ui?.warn('DeepThink toggle not found on the page — continuing without it.');
+    }
+    this.thinking = want;
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  // ---- messaging --------------------------------------------------------
+
+  async _send(text) {
+    const before = await this._blockCount();
+
+    await this.page.evaluate((value) => {
+      const el = document.querySelector('#chat-input') || document.querySelector('textarea');
+      if (!el) throw new Error('chat input not found');
+      el.focus();
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value'
+      ).set;
+      setter.call(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, text);
+
+    await new Promise(r => setTimeout(r, 150));
+    await this.page.keyboard.press('Enter');
+
+    await this._waitForNewBlock(before);
+    const reply = await this._waitForStableReply();
+
+    if (WEB_MODELS[this.modelId].think && !this.thinkVerified) {
+      this.thinkVerified = true;
+      const thought = await this.page.evaluate(
+        () => /thought for|thinking|nachgedacht/i.test(document.body.innerText.slice(0, 20000))
+      ).catch(() => true);
+      if (!thought) {
+        this.thinking = null;
+        await this._applyThinking(true);
+        this.ui?.warn('DeepThink did not look active — switched it on for the next turn.');
+      }
+    }
+
+    return reply;
+  }
+
+  async _blockCount() {
+    return this.page.evaluate(
+      () => document.querySelectorAll('.ds-markdown, [class*="ds-markdown"]').length
+    );
+  }
+
+  async _waitForNewBlock(before) {
+    const deadline = Date.now() + this.opts.firstTokenTimeout;
+    while (Date.now() < deadline) {
+      if ((await this._blockCount()) > before) return;
+      const problem = await this.page.evaluate(() => {
+        const t = document.body.innerText || '';
+        if (/server is busy/i.test(t)) return 'DeepSeek says the server is busy — try again in a moment.';
+        if (/reached the limit|message limit/i.test(t)) return 'DeepSeek message limit reached for now.';
+        return null;
+      });
+      if (problem) throw new Error(problem);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    throw new Error('DeepSeek did not start answering in time.');
+  }
+
+  async _waitForStableReply() {
+    const deadline = Date.now() + this.opts.hardTimeout;
+    let last = '';
+    let lastCount = -1;
+    let stableSince = Date.now();
+
+    while (Date.now() < deadline) {
+      const { text, count } = await this._readLastBlock();
+      if (count !== lastCount || text !== last) {
+        last = text;
+        lastCount = count;
+        stableSince = Date.now();
+      } else if (text && Date.now() - stableSince >= this.opts.stabilityMs) {
+        return text;
+      }
+      await new Promise(r => setTimeout(r, 600));
+    }
+    if (last) return last;
+    throw new Error('DeepSeek answer timed out.');
+  }
+
+  /** Read the newest assistant block and serialize its DOM back into markdown. */
+  async _readLastBlock() {
+    return this.page.evaluate(() => {
+      const blocks = document.querySelectorAll('.ds-markdown, [class*="ds-markdown"]');
+      const count = blocks.length;
+      const root = blocks[count - 1];
+      if (!root) return { text: '', count };
+
+      const inline = (node) => {
+        let out = '';
+        node.childNodes.forEach((c) => { out += ser(c, true); });
+        return out;
+      };
+
+      const ser = (node, isInline) => {
+        if (node.nodeType === Node.TEXT_NODE) return node.nodeValue;
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        const tag = node.tagName.toLowerCase();
+
+        switch (tag) {
+          case 'br': return '\n';
+          case 'hr': return '\n---\n';
+          case 'strong': case 'b': return '**' + inline(node) + '**';
+          case 'em': case 'i': return '*' + inline(node) + '*';
+          case 'del': return '~~' + inline(node) + '~~';
+          case 'a': return '[' + inline(node) + '](' + (node.getAttribute('href') || '') + ')';
+          case 'code':
+            return node.closest('pre') ? node.innerText : '`' + node.innerText + '`';
+          case 'pre': {
+            const codeEl = node.querySelector('code');
+            const cls = (codeEl && codeEl.className) || '';
+            const langMatch = /language-([\w+-]+)/.exec(cls);
+            const lang = langMatch ? langMatch[1] : '';
+            const body = (codeEl ? codeEl.innerText : node.innerText).replace(/\n+$/, '');
+            return '\n```' + lang + '\n' + body + '\n```\n';
+          }
+          case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6':
+            return '\n' + '#'.repeat(+tag[1]) + ' ' + inline(node).trim() + '\n';
+          case 'blockquote':
+            return '\n' + inline(node).trim().split('\n').map(l => '> ' + l).join('\n') + '\n';
+          case 'ul': case 'ol': {
+            const ordered = tag === 'ol';
+            let i = 0;
+            let out = '\n';
+            node.querySelectorAll(':scope > li').forEach((li) => {
+              i++;
+              const marker = ordered ? i + '. ' : '- ';
+              out += marker + inline(li).trim().split('\n').join('\n  ') + '\n';
+            });
+            return out;
+          }
+          case 'li': return inline(node);
+          case 'p': case 'div': case 'section': {
+            const body = inline(node);
+            return isInline ? body : '\n' + body + '\n';
+          }
+          case 'table': {
+            let out = '\n';
+            [...node.querySelectorAll('tr')].forEach((tr, idx) => {
+              const cells = [...tr.children].map(td => inline(td).trim().replace(/\|/g, '\\|'));
+              out += '| ' + cells.join(' | ') + ' |\n';
+              if (idx === 0) out += '| ' + cells.map(() => '---').join(' | ') + ' |\n';
+            });
+            return out + '\n';
+          }
+          default: return inline(node);
+        }
+      };
+
+      const text = ser(root, false)
+        .replace(/ /g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return { text, count };
+    });
+  }
+}

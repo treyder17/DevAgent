@@ -3,12 +3,63 @@
 DevAgent no longer depends on Puter. Instead it can talk to **any** provider —
 including **DeepSeek**, whose models you can run **for free**.
 
-There are two free/cheap ways to get DeepSeek:
+There are three free/cheap ways to get DeepSeek:
 
 | Path | Cost | Key needed | Best for |
 |------|------|-----------|----------|
-| **OpenRouter** (recommended) | **100% free** models (`:free` tag) | free OpenRouter key | zero-cost usage |
+| **Browser bridge** (`deepseek-web`) | **free** | **none at all** | no signup beyond a free DeepSeek login |
+| **OpenRouter** | **100% free** models (`:free` tag) | free OpenRouter key | zero-cost API usage |
 | **DeepSeek official API** | very cheap (pennies), small free credit | DeepSeek key | best quality / speed |
+
+---
+
+## 🚀 Option Zero — no API key whatsoever
+
+DevAgent can use the free web chat at [chat.deepseek.com](https://chat.deepseek.com)
+directly. It opens the site in a Chrome profile of its own, types your prompts into the
+real chat, flips the **DeepThink** toggle when you ask for R1, and reads the answer back.
+
+```bash
+da deepseek login                        # sign in once in the Chrome window
+da -m deepseek-web "explain this repo"   # DeepSeek-V3
+da --think "why does this test flake?"   # DeepSeek-R1, DeepThink on
+da config set model deepseek-web-think   # make DeepThink the default
+```
+
+| Model | What it is |
+|-------|------------|
+| `deepseek-web` | DeepSeek-V3, DeepThink off |
+| `deepseek-web-think` | DeepSeek-R1, DeepThink on |
+
+**How tools still work.** A web chat has no function-calling API, so DevAgent teaches the
+model a text protocol instead: the system prompt documents every tool, the model answers
+with one line
+
+```
+<<<TOOL>>>{"tool":"read_file","input":{"path":"src/da.js"}}<<<END>>>
+```
+
+and DevAgent runs it and feeds the output back as a `<<<RESULT>>>` message. File edits and
+shell commands work exactly like with the API providers.
+
+**Housekeeping**
+
+```bash
+da deepseek status           # profile, browser, port
+da deepseek test             # one round trip through the bridge
+da deepseek install-browser  # isolated Chrome (managed machines, see below)
+da deepseek logout --force   # forget the stored session
+```
+
+**If no debugging port opens:** an already-running Chrome — or a managed `UserDataDir`
+policy — swallows the new window. Close every Chrome window and retry, or run
+`da deepseek install-browser` once. That fetches a standalone *Chrome for Testing* build
+into `~/.devagent/browsers` which ignores enterprise policies and runs next to your
+normal Chrome.
+
+**Trade-offs:** it is as fast as the web UI (R1 thinks for a while), it obeys DeepSeek's
+normal rate limits, and it automates your own account in your own browser — so keep it to
+personal use.
 
 ---
 
