@@ -114,8 +114,8 @@ your first request — every session, without you repeating yourself:
 Another file, or none at all:
 
 ```bash
-da --instructions C:\pfad\zuegeln.txt
-da config set instructionsFile "C:\pfad\zuegeln.txt"
+da --instructions ./regeln.txt
+da config set instructionsFile "C:/Users/me/regeln.txt"
 da --no-instructions          # ignore it for this run
 ```
 
@@ -178,14 +178,18 @@ da chat                  Start interactive chat (default)
 da config <action>       Manage configuration
 da plugin <action>       Manage plugins
 da models [--all]        List available models (free ones by default)
+da deepseek <action>     Key-free bridge: install-browser | login | status | test | logout
 da index [dir]           Index a directory and show summary
 
 Options:
   -k, --api-key KEY      API key for the active provider (overrides config)
   -m, --model MODEL      Model to use (default: claude-sonnet-4-6)
-  -p, --provider NAME    anthropic | deepseek | openrouter | openai (auto-detected)
+  -p, --provider NAME    deepseek-web | anthropic | deepseek | openrouter | openai
+  -t, --think            Key-free DeepThink (same as -m deepseek-web-think)
   --base-url URL         Override the provider endpoint (self-hosted / proxy)
   --cwd DIR              Working directory
+  --instructions FILE    Standing instructions (default: DEVAGENT.md)
+  --no-instructions      Ignore the instructions file for this run
   --no-index             Skip codebase indexing
   --verbose              Debug output
   -v, --version          Show version
@@ -196,6 +200,7 @@ Options:
 
 | Provider   | Example models                                   | Key field / env var                    |
 |------------|--------------------------------------------------|----------------------------------------|
+| deepseek-web | `deepseek-web`, `deepseek-web-think`           | **none — browser session**              |
 | anthropic  | `claude-sonnet-4-6`, `claude-opus-4-6`           | `anthropicApiKey` / `ANTHROPIC_API_KEY` |
 | deepseek   | `deepseek-chat`, `deepseek-reasoner`             | `deepseekApiKey` / `DEEPSEEK_API_KEY`   |
 | openrouter | `deepseek/deepseek-chat-v3-0324:free`, `deepseek/deepseek-r1:free` | `openrouterApiKey` / `OPENROUTER_API_KEY` |
