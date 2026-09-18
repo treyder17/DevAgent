@@ -1,6 +1,6 @@
 // src/core/agent.js — provider-agnostic agentic loop with tool use
 
-import { TOOL_DEFINITIONS, runShell, readFile, writeFile } from '../tools/builtin.js';
+import { TOOL_DEFINITIONS, runShell, readFile, writeFile, fetchUrl, webSearch } from '../tools/builtin.js';
 import { createProvider, detectProvider } from './providers.js';
 import { loadInstructions } from './instructions.js';
 
@@ -150,6 +150,30 @@ ${codebaseCtx}
         if (!result.ok) return `Error: ${result.error}`;
         this.ui.toolResult(`Written: ${path}`, true);
         return `File written successfully: ${path}`;
+      }
+
+      case 'web_fetch': {
+        const { url } = toolInput;
+        this.ui.toolCall('web_fetch', url);
+        const r = await fetchUrl(url);
+        if (!r.ok && r.error) { this.ui.toolResult(`Error: ${r.error}`, false); return `Error fetching ${url}: ${r.error}`; }
+        this.ui.toolResult(`Fetched ${r.url} (HTTP ${r.status}, ${r.text.length} chars${r.truncated ? ', truncated' : ''})`, r.ok);
+        return `URL: ${r.url}
+HTTP ${r.status}
+
+${r.text}`;
+      }
+
+      case 'web_search': {
+        const { query } = toolInput;
+        this.ui.toolCall('web_search', query);
+        const r = await webSearch(query);
+        if (!r.ok) { this.ui.toolResult(`Error: ${r.error}`, false); return `Search failed: ${r.error}`; }
+        if (!r.results.length) { this.ui.toolResult('no results', false); return 'No results.'; }
+        this.ui.toolResult(`${r.results.length} results`, true);
+        return r.results
+          .map((x, i) => `${i + 1}. ${x.title}\n   ${x.url}\n   ${x.snippet}`)
+          .join('\n\n');
       }
 
       default:

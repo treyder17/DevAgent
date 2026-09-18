@@ -104,14 +104,44 @@ export class DeepSeekWebProvider {
       startUrl: CHAT_URL,
     });
     this.browser = browser;
-    this.page = await getPage(browser, URL_MATCH, CHAT_URL);
 
-    if (newThread || !URL_MATCH.test(this.page.url())) {
+    if (newThread) {
+      // A DeepSeek thread keeps its whole history, so reusing an open tab drags
+      // a previous conversation's context (e.g. a persona primer) into every
+      // new request. Start on a genuinely empty chat instead: open our own tab,
+      // close any other chat tabs so they cannot be picked up, and verify the
+      // conversation is empty (clicking "New chat" if the app restored one).
+      for (const pg of await browser.pages()) {
+        try { if (URL_MATCH.test(pg.url())) await pg.close(); } catch { /* gone */ }
+      }
+      this.page = await browser.newPage();
       await this.page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await this._requireLogin();
+      await this._ensureEmptyChat();
+    } else {
+      this.page = await getPage(browser, URL_MATCH, CHAT_URL);
+      await this._requireLogin();
     }
-    await this._requireLogin();
+
     this.ready = true;
     return this;
+  }
+
+  /** Make sure we are on an empty conversation, not a restored old thread. */
+  async _ensureEmptyChat() {
+    const { count } = await this._readLastBlock();
+    if (count === 0) return;
+    const clicked = await this.page.evaluate(() => {
+      const wanted = /new chat|neuer chat|neue unterhaltung/i;
+      const el = [...document.querySelectorAll('button,[role="button"],a,div,span')]
+        .find(e => wanted.test((e.getAttribute('aria-label') || '') + ' ' + (e.textContent || '').trim().slice(0, 30)));
+      if (el) { (el.closest('button,[role="button"],a') || el).click(); return true; }
+      return false;
+    }).catch(() => false);
+    if (!clicked) {
+      await this.page.goto(CHAT_URL + '?_=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    }
+    await new Promise(r => setTimeout(r, 800));
   }
 
   async close({ closeBrowser = false } = {}) {
