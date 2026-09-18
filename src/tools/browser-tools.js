@@ -9,6 +9,7 @@
 import { join } from 'path';
 import { homedir } from 'os';
 import { getBrowser } from '../core/browser.js';
+import { cleanUrl } from './web.js';
 
 const MAX_TEXT = 12000;
 let session = null; // { browser, page }
@@ -44,7 +45,7 @@ async function pageText(page) {
 }
 
 export async function browserOpen(url, config) {
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  url = cleanUrl(url);
   const { page } = await ensure(config);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await new Promise(r => setTimeout(r, 800)); // let client-rendered pages settle

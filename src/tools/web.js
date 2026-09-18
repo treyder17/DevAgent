@@ -29,9 +29,27 @@ function htmlToText(html) {
     .trim();
 }
 
+/**
+ * Normalize a URL the model may have wrapped: markdown [text](url), angle
+ * brackets <url>, backticks, quotes, or trailing punctuation.
+ */
+export function cleanUrl(input) {
+  let s = String(input || '').trim();
+  const md = s.match(/\]\(\s*([^)\s]+)\s*\)/);   // [text](url)
+  if (md) s = md[1];
+  s = s.replace(/^[<`'"(\[\s]+/, '').replace(/[>`'"\]\s]+$/, '');
+  s = s.replace(/[.,;]+$/, '');
+  // A trailing ) is a wrapper unless the URL itself has a matching ( — keeps
+  // links like ..._(disambiguation) intact.
+  if (s.endsWith(')') && !s.includes('(')) s = s.slice(0, -1);
+  s = s.replace(/[.,;]+$/, '');
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  return s;
+}
+
 /** Fetch a URL and return readable text (or raw text for non-HTML). */
 export async function fetchUrl(url, { timeoutMs = 20000 } = {}) {
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  url = cleanUrl(url);
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': UA, Accept: 'text/html,*/*' },
