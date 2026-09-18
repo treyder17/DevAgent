@@ -72,8 +72,9 @@ async function load(argv) {
   if (argv.model) cfg.model = argv.model;
   if (argv.provider) cfg.provider = argv.provider;
   if (argv['base-url']) cfg.baseUrl = argv['base-url'];
-  if (argv.instructions) cfg.instructionsFile = argv.instructions;
-  if (argv['no-instructions']) cfg.noInstructions = true;
+  // `--no-instructions` reaches minimist as instructions === false.
+  if (typeof argv.instructions === 'string' && argv.instructions) cfg.instructionsFile = argv.instructions;
+  if (argv['no-instructions'] === true || argv.instructions === false) cfg.noInstructions = true;
   if (argv.verbose) cfg.verbose = true;
 
   // Resolve which provider we're talking to (explicit wins, else guess from model).

@@ -40,6 +40,11 @@ const argv = minimist(process.argv.slice(2), {
 // --think is a shortcut for the key-free DeepThink model.
 if (argv.think && !argv.model) argv.model = 'deepseek-web-think';
 
+// minimist turns `--no-x` into `x === false`, not `argv['no-x'] === true`,
+// so both spellings have to be accepted or the flag silently does nothing.
+const isOff = (name) => argv[`no-${name}`] === true || argv[name] === false;
+argv.skipIndex = isOff('index');
+
 async function main() {
   if (argv.version) {
     const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
@@ -108,7 +113,7 @@ async function runChat(argv) {
 
   // Index codebase
   let codebaseIndex = null;
-  if (!argv['no-index']) {
+  if (!argv.skipIndex) {
     const spinner = ui.spinner('Indexing codebase…');
     codebaseIndex = new CodebaseIndex(workdir);
     await codebaseIndex.build();
@@ -172,7 +177,7 @@ async function runOneShot(prompt, argv) {
   config.ui = ui;
 
   const workdir = resolve(argv.cwd || process.cwd());
-  const codebaseIndex = argv['no-index'] ? null : new CodebaseIndex(workdir);
+  const codebaseIndex = argv.skipIndex ? null : new CodebaseIndex(workdir);
   if (codebaseIndex) await codebaseIndex.build();
 
   const plugins = new PluginManager(config);

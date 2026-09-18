@@ -125,6 +125,12 @@ export class UI {
       text: C.muted(text),
       spinner: 'dots',
       color: 'magenta',
+      // MUST stay false. ora's stdin-discarder skips its setup on Windows but
+      // still runs its teardown (process.stdin.pause() + setRawMode(false)),
+      // which kills the readline prompt: after the first answer the chat
+      // session accepted no further input and the process exited silently,
+      // without ever emitting readline's 'close'.
+      discardStdin: false,
     }).start();
     return {
       succeed: (msg) => this._spinner.succeed(C.muted(msg)),
