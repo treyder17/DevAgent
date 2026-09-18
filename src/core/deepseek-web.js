@@ -12,7 +12,7 @@
 //   deepseek-web-think  DeepSeek-R1, DeepThink on
 
 import { getBrowser, getPage, defaultProfileDir } from './browser.js';
-import { buildToolPrompt, parseToolCall, stripToolCall, formatToolResult } from './text-tools.js';
+import { buildToolPrompt, parseToolCall, stripToolCall, formatToolResult, hasToolAttempt, malformedToolMessage } from './text-tools.js';
 
 const CHAT_URL = 'https://chat.deepseek.com/';
 const URL_MATCH = /chat\.deepseek\.com/;
@@ -160,9 +160,19 @@ export class DeepSeekWebProvider {
     }
 
     const outgoing = this._composeTurn({ system, tools, history });
-    const reply = await this._send(outgoing);
+    let reply = await this._send(outgoing);
 
-    const call = parseToolCall(reply);
+    // A tool call whose JSON could not be parsed used to end the turn
+    // silently (no tool ran, no RESULT line). Instead, tell the model its
+    // call was malformed and let it resend — up to twice.
+    let call = parseToolCall(reply);
+    let repairs = 0;
+    while (!call && hasToolAttempt(reply) && repairs < 2) {
+      repairs++;
+      this.ui?.warn('DeepSeek sent a malformed tool call — asking it to resend as valid JSON.');
+      reply = await this._send(malformedToolMessage());
+      call = parseToolCall(reply);
+    }
     const text = stripToolCall(reply);
     this._pendingToolName = call?.name ?? null;
 

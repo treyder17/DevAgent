@@ -33,6 +33,7 @@ ${OPEN}{"tool":"<name>","input":{ ... }}${CLOSE}
 
 Hard rules:
 - The whole call must be on a SINGLE line and must be valid JSON. Escape newlines inside strings.
+- Inside a shell command, use SINGLE quotes, never double quotes — double quotes break the JSON. Good: "command":"powershell -Command 'Expand-Archive x.zip'".
 - Emit at most ONE tool call per message, and write nothing after it.
 - After the call, STOP. You will receive the output in a message starting with <<<RESULT>>>.
 - Never invent tool output and never claim you ran something without emitting a call.
@@ -63,14 +64,77 @@ export function parseToolCall(text) {
   const json = extractJsonObject(cleaned);
   if (!json) return null;
 
+  const parsed = parseJsonLoose(json);
+  if (!parsed) return null;
+  const name = parsed.tool || parsed.name;
+  if (!name) return null;
+  return { name, input: parsed.input ?? parsed.arguments ?? parsed.parameters ?? {} };
+}
+
+/**
+ * JSON.parse, then a repair pass for the failure the web models hit most:
+ * unescaped double quotes inside a string value, e.g.
+ *   {"command":"powershell -Command "Expand-Archive ...""}
+ * The repair re-escapes any quote that is not a structural delimiter.
+ */
+function parseJsonLoose(json) {
   try {
-    const parsed = JSON.parse(json);
-    const name = parsed.tool || parsed.name;
-    if (!name) return null;
-    return { name, input: parsed.input ?? parsed.arguments ?? parsed.parameters ?? {} };
+    return JSON.parse(json);
+  } catch { /* fall through to repair */ }
+  try {
+    return JSON.parse(repairInnerQuotes(json));
   } catch {
     return null;
   }
+}
+
+/** Escape double quotes that sit inside a string value rather than delimit it. */
+function repairInnerQuotes(json) {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (esc) { out += c; esc = false; continue; }
+    if (c === '\\') { out += c; esc = true; continue; }
+    if (c === '"') {
+      if (!inStr) { inStr = true; out += c; continue; }
+      // A closing quote is only real when the next non-space char is a
+      // structural delimiter. Otherwise it is a stray quote inside the value.
+      const next = json.slice(i + 1).match(/^\s*(.)/);
+      const nc = next ? next[1] : '';
+      if (nc === ':' || nc === ',' || nc === '}' || nc === ']' || nc === '') {
+        inStr = false; out += c;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/** True when a message looks like it MEANT to call a tool (even if malformed). */
+export function hasToolAttempt(text) {
+  if (!text) return false;
+  if (text.includes(OPEN)) return true;
+  return /```(?:json|tool_call)?\s*\{[\s\S]*?"tool"/.test(text);
+}
+
+/** Sent back when a tool call arrived but its JSON could not be parsed. */
+export function malformedToolMessage() {
+  return `<<<RESULT>>> error
+Your previous tool call was NOT valid JSON, so nothing ran.
+` +
+    `Common cause: double quotes inside a value. Resend ONE line, valid JSON, ` +
+    `using SINGLE quotes inside shell commands. Example:
+` +
+    `${OPEN}{"tool":"run_command","input":{"command":"powershell -Command \\"Get-ChildItem\\""}}${CLOSE}
+` +
+    `<<<ENDRESULT>>>
+
+Resend the tool call now.`;
 }
 
 /** Grab the first balanced object so trailing prose cannot break parsing. */
