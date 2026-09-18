@@ -2,6 +2,7 @@
 
 import { TOOL_DEFINITIONS, runShell, readFile, writeFile } from '../tools/builtin.js';
 import { createProvider, detectProvider } from './providers.js';
+import { loadInstructions } from './instructions.js';
 
 const MAX_ITERATIONS = 20; // safety limit for the tool loop
 
@@ -15,6 +16,9 @@ export class Agent {
     this.history = []; // provider-neutral multi-turn conversation history
 
     this._provider = createProvider(config);
+    // Standing instructions: a chat UI gets them as its own opening message,
+    // an API provider gets them inside the system prompt. Never both.
+    this.instructions = loadInstructions(config, workdir, ui);
     this._systemPrompt = this._buildSystemPrompt();
   }
 
@@ -44,12 +48,23 @@ export class Agent {
   setModel(model) {
     this.config.model = model;
     this._provider = createProvider(this.config);
+    this._systemPrompt = this._buildSystemPrompt();
     const guessed = detectProvider(model);
     const warning = guessed !== this.config.provider
       ? `Model "${model}" looks like a "${guessed}" model, but the active provider is "${this.config.provider}". `
         + `If it fails, set it up with: da config set model ${model}`
       : null;
     return { ok: true, warning };
+  }
+
+  /** Instructions belong in the system prompt unless the provider sends them itself. */
+  get _inlineInstructions() {
+    return this.instructions && !this._provider?.separateInstructions
+      ? `
+## Project instructions (from ${this.instructions.path})
+${this.instructions.text}
+`
+      : '';
   }
 
   _buildSystemPrompt() {
@@ -78,7 +93,7 @@ You have full awareness of the user's codebase and can take actions by calling t
 
 ## Working directory
 ${this.workdir}
-
+${this._inlineInstructions}
 ${codebaseCtx}
 `;
   }
@@ -160,6 +175,7 @@ ${codebaseCtx}
           system: this._systemPrompt,
           tools: this._allTools(),
           history: this.history,
+          instructions: this._provider.separateInstructions ? this.instructions?.text : null,
         });
       } catch (err) {
         spinner.fail('API error');

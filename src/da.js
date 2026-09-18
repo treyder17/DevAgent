@@ -32,8 +32,8 @@ function missingKeyMessage(provider) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const argv = minimist(process.argv.slice(2), {
-  boolean: ['help', 'version', 'no-index', 'verbose', 'think', 'force'],
-  string: ['api-key', 'model', 'cwd', 'provider', 'base-url'],
+  boolean: ['help', 'version', 'no-index', 'verbose', 'think', 'force', 'no-instructions'],
+  string: ['api-key', 'model', 'cwd', 'provider', 'base-url', 'instructions'],
   alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider', t: 'think' },
 });
 
@@ -500,6 +500,9 @@ OPTIONS
   -t, --think              Key-free DeepThink (same as -m deepseek-web-think)
   --base-url URL           Override the provider endpoint (self-hosted / proxy)
   --cwd DIR                Working directory
+  --instructions FILE      Standing instructions to send before your first
+                           request (default: DEVAGENT.md in the working dir)
+  --no-instructions        Ignore the instructions file for this run
   --no-index               Skip codebase indexing
   --verbose                Show debug output
   -v, --version            Show version

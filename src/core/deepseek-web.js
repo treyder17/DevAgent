@@ -47,6 +47,13 @@ export function resolveWebModel(name) {
 }
 
 export class DeepSeekWebProvider {
+  /**
+   * A chat UI has no system prompt, so standing instructions cannot be a field
+   * on the request — they are sent as the opening message of the new chat,
+   * before anything else. The agent skips inlining them when this is set.
+   */
+  separateInstructions = true;
+
   constructor({ name = 'deepseek-web', model, config = {}, ui = null } = {}) {
     this.name = name;
     this.ui = ui;
@@ -58,6 +65,7 @@ export class DeepSeekWebProvider {
     this.page = null;
     this.ready = false;
     this.primed = false;          // system prompt + tool docs sent?
+    this.instructionsSent = false;
     this.thinking = null;         // DeepThink state we last applied
     this.thinkVerified = false;
     this._callSeq = 0;
@@ -134,7 +142,7 @@ export class DeepSeekWebProvider {
 
   // ---- provider interface ----------------------------------------------
 
-  async createMessage({ system, tools, history, model }) {
+  async createMessage({ system, tools, history, model, instructions }) {
     const wanted = resolveWebModel(model) || this.modelId;
     if (wanted !== this.modelId) {
       this.modelId = wanted;
@@ -143,6 +151,13 @@ export class DeepSeekWebProvider {
 
     await this.init({ newThread: !this.ready });
     await this._applyThinking(WEB_MODELS[this.modelId].think);
+
+    // Opening message of a fresh chat, ahead of the primer and the request.
+    if (instructions && !this.instructionsSent) {
+      this.instructionsSent = true;
+      this.ui?.info('Sending standing instructions as the first message…');
+      await this._send(instructions);
+    }
 
     const outgoing = this._composeTurn({ system, tools, history });
     const reply = await this._send(outgoing);

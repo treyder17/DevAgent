@@ -18,6 +18,10 @@ const DEFAULTS = {
   maxIndexFiles: 2000,
   pluginsDir: join(CONFIG_DIR, 'plugins'),
 
+  // Standing instructions sent before your first request.
+  // Empty = look for DEVAGENT.md in the working directory.
+  instructionsFile: '',
+
   // Browser bridge for the key-free deepseek-web provider
   chromePath: null,                          // '' = auto-detect
   deepseekProfile: join(CONFIG_DIR, 'chrome-profile'),
@@ -68,6 +72,8 @@ async function load(argv) {
   if (argv.model) cfg.model = argv.model;
   if (argv.provider) cfg.provider = argv.provider;
   if (argv['base-url']) cfg.baseUrl = argv['base-url'];
+  if (argv.instructions) cfg.instructionsFile = argv.instructions;
+  if (argv['no-instructions']) cfg.noInstructions = true;
   if (argv.verbose) cfg.verbose = true;
 
   // Resolve which provider we're talking to (explicit wins, else guess from model).

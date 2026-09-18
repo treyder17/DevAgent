@@ -99,6 +99,32 @@ provider needs none of them.
 
 ---
 
+## Standing instructions (`DEVAGENT.md`)
+
+Put a `DEVAGENT.md` in your project root and DevAgent hands it to the model before
+your first request — every session, without you repeating yourself:
+
+```markdown
+- Antworte immer auf Deutsch, knapp.
+- Dieses Projekt ist Node/ESM — keine TypeScript-Vorschläge.
+- Vor jedem Commit `npm test` laufen lassen.
+- API liegt in src/api/, Datenbank ist SQLite.
+```
+
+Another file, or none at all:
+
+```bash
+da --instructions C:\pfad\zuegeln.txt
+da config set instructionsFile "C:\pfad\zuegeln.txt"
+da --no-instructions          # ignore it for this run
+```
+
+API providers receive it inside the system prompt. `deepseek-web` has no system
+prompt, so it sends the file as the **opening message of the new chat**, before the
+project context and before your request. Capped at 20 000 characters.
+
+---
+
 ## Usage
 
 ### Interactive chat
