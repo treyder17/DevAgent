@@ -52,6 +52,16 @@ export const PROVIDERS = {
     defaultModel: 'deepseek-web',
     keyless: true,
   },
+  // DevAgent-1: your own local model, served offline by Ollama. No key, no
+  // cloud. OpenAI-compatible endpoint, so it reuses the OpenAI provider.
+  'devagent-1': {
+    type: 'openai',
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    envKey: null,
+    defaultModel: 'qwen2.5-coder:3b',
+    keyless: true,
+    local: true,
+  },
 };
 
 /**
@@ -65,6 +75,7 @@ export const PROVIDERS = {
 export function detectProvider(model) {
   if (!model) return 'anthropic';
   const m = model.toLowerCase();
+  if (m === 'devagent-1' || m === 'dev1' || m === 'devagent1') return 'devagent-1';
   if (m.startsWith('deepseek-web') || m === 'deepthink') return 'deepseek-web';
   if (m.startsWith('claude')) return 'anthropic';
   if (m.startsWith('deepseek-')) return 'deepseek';

@@ -22,6 +22,9 @@ const DEFAULTS = {
   // Empty = look for DEVAGENT.md in the working directory.
   instructionsFile: '',
 
+  // DevAgent-1: which local Ollama model the 'devagent-1' provider actually runs.
+  devagent1Model: 'qwen2.5-coder:3b',
+
   // Browser bridge for the key-free deepseek-web provider
   chromePath: null,                          // '' = auto-detect
   deepseekProfile: join(CONFIG_DIR, 'chrome-profile'),
@@ -84,6 +87,19 @@ async function load(argv) {
     throw new Error(
       `Unknown provider "${cfg.provider}". Known: ${Object.keys(PROVIDERS).join(', ')}.`
     );
+  }
+
+  // 'devagent-1' is a brand, not an Ollama tag: map it to the real local model
+  // so `da -p devagent-1` and `da -m devagent-1` both just work.
+  if (cfg.provider === 'devagent-1') {
+    const m = (cfg.model || '').toLowerCase();
+    // Anything that names a cloud model (or the brand itself) is not an Ollama
+    // tag; only a genuine local tag the user set explicitly is kept.
+    const foreign = !m
+      || ['devagent-1', 'dev1', 'devagent1'].includes(m)
+      || /^(claude|gpt|o[13]|deepseek|deepthink)/.test(m)
+      || m.includes('/') || m === 'deepseek-web' || m === 'deepseek-web-think';
+    if (foreign) cfg.model = cfg.devagent1Model || preset.defaultModel;
   }
 
   // Resolve the API key, in priority order:
