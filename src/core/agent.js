@@ -1,6 +1,6 @@
 // src/core/agent.js — provider-agnostic agentic loop with tool use
 
-import { TOOL_DEFINITIONS, runShell, readFile, writeFile, fetchUrl, webSearch } from '../tools/builtin.js';
+import { TOOL_DEFINITIONS, runShell, readFile, writeFile, fetchUrl, webSearch, browserOpen, browserRead, browserClick, browserClose } from '../tools/builtin.js';
 import { createProvider, detectProvider } from './providers.js';
 import { loadInstructions } from './instructions.js';
 
@@ -33,6 +33,7 @@ export class Agent {
    */
   async dispose() {
     await this._provider?.close?.();
+    await browserClose().catch(() => {});
   }
 
   /** List models available from the current provider. */
@@ -174,6 +175,39 @@ ${r.text}`;
         return r.results
           .map((x, i) => `${i + 1}. ${x.title}\n   ${x.url}\n   ${x.snippet}`)
           .join('\n\n');
+      }
+
+      case 'browser_open': {
+        const { url } = toolInput;
+        this.ui.toolCall('browser_open', url);
+        const r = await browserOpen(url, this.config);
+        if (!r.ok) { this.ui.toolResult(`Error: ${r.error}`, false); return `Error: ${r.error}`; }
+        this.ui.toolResult(`Opened ${r.title || r.url}`, true);
+        return `Opened: ${r.url}
+Title: ${r.title}
+
+${r.text}`;
+      }
+
+      case 'browser_read': {
+        this.ui.toolCall('browser_read', '');
+        const r = await browserRead(this.config);
+        if (!r.ok) { this.ui.toolResult(`Error: ${r.error}`, false); return `Error: ${r.error}`; }
+        this.ui.toolResult(`Read ${r.title || r.url}`, true);
+        return `URL: ${r.url}
+Title: ${r.title}
+
+${r.text}`;
+      }
+
+      case 'browser_click': {
+        const { target } = toolInput;
+        this.ui.toolCall('browser_click', target);
+        const r = await browserClick(target, this.config);
+        if (!r.ok) { this.ui.toolResult(`Error: ${r.error}`, false); return `Error: ${r.error}`; }
+        this.ui.toolResult(`Clicked "${r.clicked}" -> ${r.title || r.url}`, true);
+        return `Clicked: ${r.clicked}
+Now on: ${r.url} (${r.title})`;
       }
 
       default:

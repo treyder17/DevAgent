@@ -25,6 +25,12 @@ const DEFAULTS = {
   // DevAgent-1: which local Ollama model the 'devagent-1' provider actually runs.
   devagent1Model: 'qwen2.5-coder:3b',
 
+  // "Dev in Chrome": the visible workspace browser for browser_* tools.
+  // Own port + profile so it never clashes with the (headless) chat bridge.
+  browsePort: 9223,
+  browseProfile: join(CONFIG_DIR, 'browse-profile'),
+  browseHeadless: false,
+
   // Browser bridge for the key-free deepseek-web provider
   chromePath: null,                          // '' = auto-detect
   deepseekProfile: join(CONFIG_DIR, 'chrome-profile'),

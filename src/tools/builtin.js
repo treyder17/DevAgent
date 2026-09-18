@@ -5,8 +5,10 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 
 import { WEB_TOOLS, fetchUrl, webSearch } from './web.js';
+import { BROWSER_TOOLS, browserOpen, browserRead, browserClick, browserClose } from './browser-tools.js';
 
 export { fetchUrl, webSearch };
+export { browserOpen, browserRead, browserClick, browserClose };
 
 /**
  * Execute a shell command and return stdout/stderr.
@@ -127,3 +129,5 @@ Do not write binary files. Do not write outside the project root.`,
 
 // Internet tools (web_fetch, web_search) — no API key.
 TOOL_DEFINITIONS.push(...WEB_TOOLS);
+// Browser tools (browser_open, browser_read, browser_click) — "Dev in Chrome".
+TOOL_DEFINITIONS.push(...BROWSER_TOOLS);
