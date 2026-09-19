@@ -87,17 +87,7 @@ export class UI {
   /** Show an assistant text response */
   assistantMessage(text) {
     console.log('');
-    const lines = text.split('\n');
-    for (const line of lines) {
-      // Code blocks get yellow tint
-      if (line.startsWith('```') || line.startsWith('    ')) {
-        console.log(C.code(line));
-      } else if (line.match(/^#{1,3} /)) {
-        console.log(C.assist.bold(line));
-      } else {
-        console.log(line);
-      }
-    }
+    console.log(renderMarkdown(text));
     console.log('');
   }
 
@@ -142,4 +132,53 @@ export class UI {
       },
     };
   }
+}
+
+// --- Markdown → ANSI for the terminal --------------------------------------
+// The web models answer in Markdown; showing raw **, #, ``` and * is ugly.
+// This renders the common cases to terminal styling and drops the syntax.
+
+function inlineMd(s) {
+  return s
+    // inline code first, so its contents aren't further parsed
+    .replace(/`([^`]+)`/g, (_, c) => C.code(c))
+    .replace(/\*\*([^*]+)\*\*/g, (_, c) => chalk.bold(c))
+    .replace(/__([^_]+)__/g, (_, c) => chalk.bold(c))
+    .replace(/~~([^~]+)~~/g, (_, c) => chalk.strikethrough(c))
+    .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s.,;:)]|$)/g, (_, p, c) => p + chalk.italic(c))
+    .replace(/(^|[\s(])_([^_\s][^_]*?)_(?=[\s.,;:)]|$)/g, (_, p, c) => p + chalk.italic(c))
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `${chalk.cyan.underline(t)} (${C.muted(u)})`);
+}
+
+export function renderMarkdown(text) {
+  const out = [];
+  let inFence = false;
+  let fenceLang = '';
+
+  for (const raw of String(text ?? '').split('\n')) {
+    const fence = raw.match(/^\s*```(.*)$/);
+    if (fence) {
+      if (!inFence) { inFence = true; fenceLang = fence[1].trim(); out.push(C.muted(fenceLang ? `┌─ ${fenceLang}` : '┌─')); }
+      else { inFence = false; out.push(C.muted('└─')); }
+      continue;
+    }
+    if (inFence) { out.push(C.code('│ ') + C.code(raw)); continue; }
+
+    const h = raw.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { out.push(chalk.bold.hex('#A78BFA')(inlineMd(h[2]))); continue; }
+
+    if (/^\s*([-*+])\s+/.test(raw)) {
+      out.push(inlineMd(raw.replace(/^(\s*)[-*+]\s+/, (_, sp) => sp + C.brand('• '))));
+      continue;
+    }
+    const oli = raw.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (oli) { out.push(oli[1] + C.brand(`${oli[2]}. `) + inlineMd(oli[3])); continue; }
+
+    if (/^\s*>\s?/.test(raw)) { out.push(C.muted('│ ') + C.dim(inlineMd(raw.replace(/^\s*>\s?/, '')))); continue; }
+
+    if (/^\s*([-*_]){3,}\s*$/.test(raw)) { out.push(C.muted('─'.repeat(40))); continue; }
+
+    out.push(inlineMd(raw));
+  }
+  return out.join('\n');
 }

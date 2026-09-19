@@ -19,10 +19,13 @@ function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-/** Create and persist a new session record. */
+/**
+ * Create a new session record in memory. It is NOT written to disk until the
+ * first turn is recorded, so opening `da` and closing it never leaves an empty
+ * "(empty)" entry cluttering the resume list.
+ */
 export function createSession({ cwd, provider, model }) {
-  ensureDir();
-  const s = {
+  return {
     id: newId(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -32,8 +35,6 @@ export function createSession({ cwd, provider, model }) {
     turns: 0,
     threadUrl: '',
   };
-  save(s);
-  return s;
 }
 
 export function save(session) {
@@ -58,7 +59,10 @@ export function listSessions(limit = 30) {
   const out = [];
   for (const f of readdirSync(DIR)) {
     if (!f.endsWith('.json')) continue;
-    try { out.push(JSON.parse(readFileSync(join(DIR, f), 'utf8'))); } catch { /* skip bad file */ }
+    try {
+      const s = JSON.parse(readFileSync(join(DIR, f), 'utf8'));
+      if (s.turns > 0) out.push(s); // never list empties
+    } catch { /* skip bad file */ }
   }
   out.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   return out.slice(0, limit);

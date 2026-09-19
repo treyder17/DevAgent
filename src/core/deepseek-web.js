@@ -61,19 +61,19 @@ export class DeepSeekWebProvider {
     this.modelId = resolveWebModel(model) || 'deepseek-web';
     this.verbose = config.verbose;
 
-    // --resume: continue a past chat instead of opening a fresh one. Either the
-    // last thread (resume) or a specific one picked from the list (resumeUrl).
-    // A resumed thread already holds the primer and instructions, so don't
-    // re-send them.
+    // --resume: reopen a SPECIFIC past thread chosen from the picker. Resuming
+    // is URL-based only — without a URL there is nothing safe to continue, so we
+    // start fresh rather than grabbing whatever tab happens to be open (that was
+    // the "loads a wrong/new chat" bug). A resumed thread already holds the
+    // primer and instructions, so those are skipped only when a URL is set.
     this.resumeUrl = config.resumeUrl || null;
-    this.resume = config.resume === true || !!this.resumeUrl;
     this.threadUrl = this.resumeUrl || '';   // exposed so a session can record it
 
     this.browser = null;
     this.page = null;
     this.ready = false;
-    this.primed = this.resume;          // system prompt + tool docs already sent?
-    this.instructionsSent = this.resume;
+    this.primed = !!this.resumeUrl;          // system prompt + tool docs already sent?
+    this.instructionsSent = !!this.resumeUrl;
     this.thinking = null;         // DeepThink state we last applied
     this.thinkVerified = false;
     this._callSeq = 0;
@@ -114,16 +114,15 @@ export class DeepSeekWebProvider {
     this.browser = browser;
 
     if (this.resumeUrl) {
-      // Reopen a specific past thread picked from `da --resume`.
+      // Reopen the exact past thread picked from `da --resume`.
       this.page = await browser.newPage();
       await this.page.goto(this.resumeUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await this._requireLogin();
-    } else if (newThread) {
-      // A DeepSeek thread keeps its whole history, so reusing an open tab drags
-      // a previous conversation's context (e.g. a persona primer) into every
-      // new request. Start on a genuinely empty chat instead: open our own tab,
-      // close any other chat tabs so they cannot be picked up, and verify the
-      // conversation is empty (clicking "New chat" if the app restored one).
+    } else {
+      // Fresh chat. A DeepSeek thread keeps its whole history, so reusing an
+      // open tab would drag a previous conversation's context into every new
+      // request. Open our own tab, close any other chat tabs so they cannot be
+      // picked up, and verify the conversation is empty.
       for (const pg of await browser.pages()) {
         try { if (URL_MATCH.test(pg.url())) await pg.close(); } catch { /* gone */ }
       }
@@ -131,9 +130,6 @@ export class DeepSeekWebProvider {
       await this.page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await this._requireLogin();
       await this._ensureEmptyChat();
-    } else {
-      this.page = await getPage(browser, URL_MATCH, CHAT_URL);
-      await this._requireLogin();
     }
 
     this.ready = true;
@@ -193,7 +189,7 @@ export class DeepSeekWebProvider {
     }
 
     // Fresh chat by default; --resume reuses the last open thread.
-    await this.init({ newThread: !this.ready && !this.resume });
+    await this.init();
     await this._applyThinking(WEB_MODELS[this.modelId].think);
 
     // Opening message of a fresh chat, ahead of the primer and the request.

@@ -2,7 +2,7 @@
 // DevAgent (da) — AI coding assistant for your terminal
 // MIT License
 
-import { createInterface } from 'readline';
+import { createInterface, emitKeypressEvents } from 'readline';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { homedir } from 'os';
@@ -232,12 +232,17 @@ async function pickSession(ui, config) {
   ui.print('Previous conversations (newest first):');
   ui.print('');
   items.forEach((it, i) => ui.print(`  ${String(i + 1).padStart(2)}. ${it.label}`));
+  ui.print('  ↑/↓ to move · Enter to open · q for a new conversation');
   ui.print('');
-  ui.print('  Enter a number, Enter = newest, q = new conversation.');
+
+  // Arrow-key selection when we have a real terminal; number entry otherwise.
+  if (process.stdin.isTTY) {
+    const idx = await arrowSelect(items.map((it) => it.label));
+    return idx < 0 ? null : items[idx];
+  }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const answer = await new Promise((res) => rl.question('  › ', (a) => { rl.close(); res(a.trim()); }));
-
   if (/^q/i.test(answer)) return null;
   const idx = answer === '' ? 0 : parseInt(answer, 10) - 1;
   if (Number.isNaN(idx) || idx < 0 || idx >= items.length) {
@@ -245,6 +250,59 @@ async function pickSession(ui, config) {
     return null;
   }
   return items[idx];
+}
+
+/**
+ * Arrow-key list selector (↑/↓/j/k, Enter to pick, q/Esc to cancel).
+ * Returns the chosen index, or -1 to cancel. A fixed-height viewport keeps the
+ * cursor math stable no matter how long the list is.
+ */
+function arrowSelect(labels) {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const visible = Math.min(12, labels.length);
+    let idx = 0, top = 0, drawn = false;
+
+    emitKeypressEvents(stdin);
+    try { stdin.setRawMode(true); } catch { /* not a tty */ }
+    stdin.resume();
+
+    const draw = () => {
+      if (idx < top) top = idx;
+      if (idx >= top + visible) top = idx - visible + 1;
+      if (drawn) process.stdout.write(`\x1b[${visible}A`);
+      drawn = true;
+      for (let r = 0; r < visible; r++) {
+        const i = top + r;
+        let line = '';
+        if (i < labels.length) {
+          const sel = i === idx;
+          line = sel
+            ? `\x1b[36m❯ ${labels[i]}\x1b[0m`
+            : `  \x1b[2m${labels[i]}\x1b[0m`;
+        }
+        process.stdout.write('\x1b[2K' + line + '\n');
+      }
+    };
+
+    const cleanup = () => {
+      stdin.removeListener('keypress', onKey);
+      try { stdin.setRawMode(false); } catch { /* ignore */ }
+      stdin.pause();
+    };
+
+    const onKey = (str, key) => {
+      if (!key) return;
+      if (key.name === 'up' || key.name === 'k') { idx = (idx - 1 + labels.length) % labels.length; draw(); }
+      else if (key.name === 'down' || key.name === 'j') { idx = (idx + 1) % labels.length; draw(); }
+      else if (key.name === 'return' || key.name === 'enter') { cleanup(); resolve(idx); }
+      else if (key.name === 'escape' || str === 'q') { cleanup(); resolve(-1); }
+      else if (key.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
+    };
+
+    stdin.on('keypress', onKey);
+    draw();
+  });
 }
 
 async function runOneShot(prompt, argv) {
