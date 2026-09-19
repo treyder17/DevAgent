@@ -181,7 +181,36 @@ export class DeepSeekWebProvider {
 
   // ---- provider interface ----------------------------------------------
 
-  async createMessage({ system, tools, history, model, instructions }) {
+  /** Puppeteer errors that mean our tab/browser went away and we must reopen. */
+  _isDeadPage(err) {
+    return /detached Frame|Target closed|Session closed|Navigation failed|Execution context was destroyed|Protocol error/i
+      .test(err?.message || '');
+  }
+
+  async createMessage(args) {
+    try {
+      return await this._createMessage(args);
+    } catch (err) {
+      if (!this._isDeadPage(err)) throw err;
+      // The tab was closed/reloaded under us. Reopen and try once more instead
+      // of surfacing a scary "detached Frame" error.
+      this.ui?.warn('Browser tab was lost — reopening the DeepSeek session…');
+      this.ready = false;
+      this.page = null;
+      try { if (this.browser) await this.browser.disconnect(); } catch { /* ignore */ }
+      this.browser = null;
+      // Continue the same thread if we know it — it already holds the primer
+      // and instructions, so don't resend them.
+      if (this.threadUrl) {
+        this.resumeUrl = this.threadUrl;
+        this.primed = true;
+        this.instructionsSent = true;
+      }
+      return await this._createMessage(args);
+    }
+  }
+
+  async _createMessage({ system, tools, history, model, instructions }) {
     const wanted = resolveWebModel(model) || this.modelId;
     if (wanted !== this.modelId) {
       this.modelId = wanted;
