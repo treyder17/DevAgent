@@ -10,7 +10,7 @@ import { Agent } from '../src/core/agent.js';
 import { CONFIG } from '../src/core/config.js';
 import { PluginManager } from '../src/core/plugins.js';
 import { createSession, recordTurn } from '../src/core/sessions.js';
-import { activate, isActivated } from '../src/core/license.js';
+import { activate, isActivated, reportActivation } from '../src/core/license.js';
 import { makeAppUI } from './app-ui.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -63,7 +63,12 @@ ipcMain.handle('license:status', async () => {
 });
 
 ipcMain.handle('license:activate', async (_e, key) => {
-  return activate(key, CONFIG); // { ok } or { ok:false, error }
+  const r = activate(key, CONFIG); // { ok } or { ok:false, error }
+  if (r.ok) {
+    const cfg = await CONFIG.load({});
+    reportActivation(cfg, { via: 'app' }).catch(() => {});
+  }
+  return r;
 });
 
 ipcMain.handle('chat:send', async (_e, text) => {

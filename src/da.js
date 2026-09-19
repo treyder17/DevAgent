@@ -22,7 +22,7 @@ import {
 } from './core/browser.js';
 import { listSessions, createSession, recordTurn, describe } from './core/sessions.js';
 import { readInput } from './ui/input.js';
-import { activate, isActivated, LOCK_MESSAGE } from './core/license.js';
+import { activate, isActivated, lockReason, reportActivation, deviceId, keyId, LOCK_MESSAGES } from './core/license.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -88,6 +88,20 @@ async function main() {
     return;
   }
 
+  if (cmd === 'roster') {
+    await handleRoster();
+    return;
+  }
+
+  if (cmd === 'whoami') {
+    const ui = new UI();
+    const cfg = await CONFIG.load({});
+    ui.print(`Device:    ${deviceId()}`);
+    ui.print(`Key:       ${keyId(cfg) || '(none)'}`);
+    ui.print(`Activated: ${isActivated(cfg) ? 'yes' : 'no'}${cfg.activatedAt ? ' · ' + cfg.activatedAt : ''}`);
+    return;
+  }
+
   if (cmd === 'deepseek') {
     await handleDeepSeek(args);
     return;
@@ -120,7 +134,7 @@ async function runChat(argv) {
 
   const config = await CONFIG.load(argv);
   if (!isActivated(config)) {
-    ui.error(LOCK_MESSAGE);
+    ui.error(LOCK_MESSAGES[lockReason(config)]);
     process.exit(1);
   }
   if (!config.apiKey && !config.keyless) {
@@ -309,7 +323,7 @@ async function runOneShot(prompt, argv) {
   const ui = new UI({ quiet: true });
   const config = await CONFIG.load(argv);
   if (!isActivated(config)) {
-    ui.error(LOCK_MESSAGE);
+    ui.error(LOCK_MESSAGES[lockReason(config)]);
     process.exit(1);
   }
   if (!config.apiKey && !config.keyless) {
@@ -395,6 +409,30 @@ async function handleSlashCommand(input, agent, ui, rl) {
   }
 }
 
+async function handleRoster() {
+  const ui = new UI();
+  const cfg = await CONFIG.load({});
+  const url = cfg.licenseRosterUrl || cfg.licenseReportUrl;
+  if (!url) {
+    ui.warn('No roster URL set. Point it at your license registry:');
+    ui.print('  da config set licenseRosterUrl https://YOUR-HOST/roster?token=YOUR_TOKEN');
+    return;
+  }
+  const sp = ui.spinner('Fetching activations…');
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    sp.succeed(`${rows.length} device(s) have DevAgent`);
+    ui.print('');
+    rows.forEach((r, i) => ui.print(
+      `  ${String(i + 1).padStart(2)}. ${(r.host || '?').padEnd(18)} key ${(r.key || '?').padEnd(9)} ${r.platform || ''}  last: ${(r.lastSeen || '').slice(0, 10)}`
+    ));
+  } catch (err) {
+    sp.fail(`Could not fetch roster: ${err.message}`);
+  }
+}
+
 async function handleActivate(args) {
   const ui = new UI();
   const config = await CONFIG.load({});
@@ -410,6 +448,8 @@ async function handleActivate(args) {
   const r = activate(key, CONFIG);
   if (r.ok) {
     ui.success('Activated. DevAgent is unlocked — run "da" to start.');
+    const cfg = await CONFIG.load({});
+    await reportActivation(cfg, { via: 'cli' });
   } else {
     ui.error(r.error + '\n  Get a key from the DevAgent Telegram bot.');
     process.exitCode = 1;
@@ -656,7 +696,9 @@ USAGE
   da config <action>       Manage configuration
   da plugin <action>       Manage plugins
   da models [--all]        List available models (free ones by default)
-  da activate <key>        Unlock DevAgent with an access key
+  da activate <key>        Unlock DevAgent with an access key (binds to this device)
+  da whoami                Show this device's activation status
+  da roster                List who has activated DevAgent (owner)
   da deepseek <action>     Key-free DeepSeek bridge:
                            install-browser | login | status | test | logout
   da sessions              List past chat sessions

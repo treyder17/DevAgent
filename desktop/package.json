@@ -1,6 +1,6 @@
 {
   "name": "devagent-desktop",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "DevAgent desktop app (Windows, macOS, Linux) — the DevAgent engine with a GUI.",
   "type": "module",
   "main": "build/main.mjs",
@@ -22,16 +22,35 @@
   "build": {
     "appId": "com.treyder17.devagent",
     "productName": "DevAgent",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "files": [
       "build/**/*",
       "preload.cjs",
       "renderer/**/*",
       "package.json"
     ],
-    "win": { "target": ["nsis"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
-    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
-    "linux": { "target": ["AppImage"], "category": "Development" }
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
   }
 }
