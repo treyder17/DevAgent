@@ -14,6 +14,9 @@ const DEFAULTS = {
   model: 'claude-sonnet-4-6',
   baseUrl: '',             // optional override for the provider endpoint
   maxTokens: 8192,
+  // Max tool calls per request. 0 (or negative) = unlimited: run until the
+  // model stops calling tools. Finite value = safety cap against runaway loops.
+  maxIterations: 40,
   maxFileSizeKb: 100,
   maxIndexFiles: 2000,
   pluginsDir: join(CONFIG_DIR, 'plugins'),
@@ -84,6 +87,8 @@ async function load(argv) {
   // `--no-instructions` reaches minimist as instructions === false.
   if (typeof argv.instructions === 'string' && argv.instructions) cfg.instructionsFile = argv.instructions;
   if (argv['no-instructions'] === true || argv.instructions === false) cfg.noInstructions = true;
+  if (argv['max-iterations'] !== undefined) cfg.maxIterations = Number(argv['max-iterations']);
+  cfg.resume = argv.resume === true;   // continue the previous chat thread
   if (argv.verbose) cfg.verbose = true;
 
   // Resolve which provider we're talking to (explicit wins, else guess from model).

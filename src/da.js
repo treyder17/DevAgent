@@ -32,9 +32,9 @@ function missingKeyMessage(provider) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const argv = minimist(process.argv.slice(2), {
-  boolean: ['help', 'version', 'no-index', 'verbose', 'think', 'force', 'no-instructions'],
-  string: ['api-key', 'model', 'cwd', 'provider', 'base-url', 'instructions'],
-  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider', t: 'think' },
+  boolean: ['help', 'version', 'no-index', 'verbose', 'think', 'force', 'no-instructions', 'resume'],
+  string: ['api-key', 'model', 'cwd', 'provider', 'base-url', 'instructions', 'max-iterations'],
+  alias: { h: 'help', v: 'version', k: 'api-key', m: 'model', p: 'provider', t: 'think', r: 'resume' },
 });
 
 // --think is a shortcut for the key-free DeepThink model.
@@ -508,6 +508,8 @@ OPTIONS
   --instructions FILE      Standing instructions to send before your first
                            request (default: DEVAGENT.md in the working dir)
   --no-instructions        Ignore the instructions file for this run
+  -r, --resume             Continue the previous chat instead of starting fresh
+  --max-iterations N       Max tool calls per request (0 = unlimited)
   --no-index               Skip codebase indexing
   --verbose                Show debug output
   -v, --version            Show version

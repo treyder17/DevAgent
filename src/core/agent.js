@@ -4,7 +4,7 @@ import { TOOL_DEFINITIONS, runShell, readFile, writeFile, fetchUrl, webSearch, b
 import { createProvider, detectProvider } from './providers.js';
 import { loadInstructions } from './instructions.js';
 
-const MAX_ITERATIONS = 20; // safety limit for the tool loop
+const DEFAULT_MAX_ITERATIONS = 40; // safety cap; config.maxIterations overrides, 0 = unlimited
 
 export class Agent {
   constructor({ config, codebaseIndex, plugins, workdir, ui }) {
@@ -221,8 +221,11 @@ Now on: ${r.url} (${r.title})`;
 
     const spinner = this.ui.spinner('Thinking…');
     let iterations = 0;
+    const cap = Number(this.config.maxIterations);
+    // 0 or negative = no cap (run until the model stops calling tools).
+    const maxIterations = cap > 0 ? cap : Infinity;
 
-    while (iterations < MAX_ITERATIONS) {
+    while (iterations < maxIterations) {
       iterations++;
 
       let response;
@@ -279,8 +282,8 @@ Now on: ${r.url} (${r.title})`;
       break;
     }
 
-    if (iterations >= MAX_ITERATIONS) {
-      this.ui.warn('Reached maximum tool iterations. Stopping.');
+    if (Number.isFinite(maxIterations) && iterations >= maxIterations) {
+      this.ui.warn(`Reached the tool-iteration limit (${maxIterations}). Raise it with: da config set maxIterations 0  (0 = unlimited).`);
     }
   }
 }

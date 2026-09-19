@@ -61,11 +61,16 @@ export class DeepSeekWebProvider {
     this.modelId = resolveWebModel(model) || 'deepseek-web';
     this.verbose = config.verbose;
 
+    // --resume: continue the last chat thread instead of opening a fresh one.
+    // A resumed thread already holds the primer and instructions, so don't
+    // re-send them.
+    this.resume = config.resume === true;
+
     this.browser = null;
     this.page = null;
     this.ready = false;
-    this.primed = false;          // system prompt + tool docs sent?
-    this.instructionsSent = false;
+    this.primed = this.resume;          // system prompt + tool docs already sent?
+    this.instructionsSent = this.resume;
     this.thinking = null;         // DeepThink state we last applied
     this.thinkVerified = false;
     this._callSeq = 0;
@@ -179,7 +184,8 @@ export class DeepSeekWebProvider {
       this.thinkVerified = false;
     }
 
-    await this.init({ newThread: !this.ready });
+    // Fresh chat by default; --resume reuses the last open thread.
+    await this.init({ newThread: !this.ready && !this.resume });
     await this._applyThinking(WEB_MODELS[this.modelId].think);
 
     // Opening message of a fresh chat, ahead of the primer and the request.
