@@ -1,0 +1,32 @@
+{
+  "name": "devagent-desktop",
+  "version": "1.5.0",
+  "description": "DevAgent desktop app (Windows, macOS, Linux) — the DevAgent engine with a GUI.",
+  "type": "module",
+  "main": "main.js",
+  "author": "treyder17",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.treyder17.devagent",
+    "productName": "DevAgent",
+    "files": [
+      "**/*",
+      "../src/**/*"
+    ],
+    "extraMetadata": { "main": "main.js" },
+    "win": { "target": ["nsis"] },
+    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
+    "linux": { "target": ["AppImage"], "category": "Development" }
+  }
+}

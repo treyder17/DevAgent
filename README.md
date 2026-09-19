@@ -22,6 +22,8 @@ da --think "why does this test flake?"  # DeepThink / R1
 
 See **[USEFREE.md](./USEFREE.md)** for all the free routes.
 
+**Prefer a window over a terminal?** There is a cross-platform **desktop app** (Windows/macOS/Linux) that runs the same engine with a GUI — see **[desktop/](./desktop/)**.
+
 ---
 
 ## Install

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DevAgent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">DevAgent</div>
+    <div class="meta" id="meta">starting…</div>
+    <div class="actions">
+      <button id="btn-folder" title="Working folder">📁 Folder</button>
+      <button id="btn-clear" title="New conversation">✳ New</button>
+    </div>
+  </header>
+
+  <main id="log" aria-live="polite"></main>
+
+  <div id="status" class="status hidden"><span class="dot"></span><span id="status-text"></span></div>
+
+  <footer id="composer">
+    <textarea id="input" rows="1" placeholder="Ask DevAgent…  (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button id="send">Send</button>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
