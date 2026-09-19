@@ -3,46 +3,35 @@
   "version": "1.6.0",
   "description": "DevAgent desktop app (Windows, macOS, Linux) — the DevAgent engine with a GUI.",
   "type": "module",
-  "main": "main.js",
+  "main": "build/main.mjs",
   "author": "treyder17",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "bundle": "node build.js",
+    "start": "npm run bundle && electron .",
+    "dist": "npm run bundle && electron-builder",
+    "dist:win": "npm run bundle && electron-builder --win",
+    "dist:mac": "npm run bundle && electron-builder --mac",
+    "dist:linux": "npm run bundle && electron-builder --linux"
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.28.2"
   },
   "build": {
     "appId": "com.treyder17.devagent",
     "productName": "DevAgent",
+    "directories": { "output": "dist" },
     "files": [
-      "**/*",
-      "../src/**/*"
+      "build/**/*",
+      "preload.cjs",
+      "renderer/**/*",
+      "package.json"
     ],
-    "extraMetadata": {
-      "main": "main.js"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.developer-tools"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Development"
-    }
+    "win": { "target": ["nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
+    "linux": { "target": ["AppImage"], "category": "Development" }
   }
 }

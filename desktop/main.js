@@ -34,13 +34,14 @@ function createWindow() {
     title: 'DevAgent',
     backgroundColor: '#0e0e12',
     webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
+      // main runs from build/main.mjs, so preload/renderer sit one level up.
+      preload: join(__dirname, '..', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
   win.removeMenu?.();
-  win.loadFile(join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(join(__dirname, '..', 'renderer', 'index.html'));
 }
 
 /** Build the agent on first use (keeps startup instant). */
