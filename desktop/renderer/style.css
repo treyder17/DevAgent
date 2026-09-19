@@ -89,3 +89,32 @@ body {
   display: inline-block; background: var(--panel-2); border: 1px solid var(--border);
   color: var(--brand-2); border-radius: 6px; padding: 1px 8px; margin: 0 2px; font-size: 12px;
 }
+
+/* Activation gate overlay */
+.gate {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 10, 14, 0.92); backdrop-filter: blur(4px);
+}
+.gate.hidden { display: none; }
+.gate-card {
+  width: 360px; max-width: 90vw; text-align: center;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px 24px;
+}
+.gate-title { font-size: 22px; font-weight: 700; color: var(--brand-2); }
+.gate-sub { color: var(--muted); margin: 6px 0 18px; font-size: 13px; }
+.gate-card input {
+  width: 100%; text-align: center; letter-spacing: 1px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+  font: inherit; outline: none; text-transform: uppercase;
+}
+.gate-card input:focus { border-color: var(--brand); }
+.gate-card button {
+  width: 100%; margin-top: 12px; background: var(--brand); color: #fff;
+  border: none; border-radius: 10px; padding: 11px; cursor: pointer; font-weight: 600;
+}
+.gate-msg { min-height: 18px; margin-top: 10px; font-size: 12.5px; color: var(--err); }
+.gate-msg.ok { color: var(--ok); }
+.gate-hint { margin-top: 14px; font-size: 12px; color: var(--muted); }

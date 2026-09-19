@@ -25,6 +25,17 @@
     <button id="send">Send</button>
   </footer>
 
+  <div id="gate" class="gate hidden">
+    <div class="gate-card">
+      <div class="gate-title">DevAgent</div>
+      <div class="gate-sub">Enter your access key to unlock.</div>
+      <input id="gate-key" type="text" placeholder="DEVAGENT-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+      <button id="gate-btn">Activate</button>
+      <div id="gate-msg" class="gate-msg"></div>
+      <div class="gate-hint">Get a key from the DevAgent Telegram bot.</div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

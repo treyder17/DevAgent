@@ -22,6 +22,7 @@ import {
 } from './core/browser.js';
 import { listSessions, createSession, recordTurn, describe } from './core/sessions.js';
 import { readInput } from './ui/input.js';
+import { activate, isActivated, LOCK_MESSAGE } from './core/license.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -82,6 +83,11 @@ async function main() {
     return;
   }
 
+  if (cmd === 'activate') {
+    await handleActivate(args);
+    return;
+  }
+
   if (cmd === 'deepseek') {
     await handleDeepSeek(args);
     return;
@@ -113,6 +119,10 @@ async function runChat(argv) {
   ui.banner();
 
   const config = await CONFIG.load(argv);
+  if (!isActivated(config)) {
+    ui.error(LOCK_MESSAGE);
+    process.exit(1);
+  }
   if (!config.apiKey && !config.keyless) {
     ui.error(missingKeyMessage(config.provider));
     process.exit(1);
@@ -298,6 +308,10 @@ function arrowSelect(labels) {
 async function runOneShot(prompt, argv) {
   const ui = new UI({ quiet: true });
   const config = await CONFIG.load(argv);
+  if (!isActivated(config)) {
+    ui.error(LOCK_MESSAGE);
+    process.exit(1);
+  }
   if (!config.apiKey && !config.keyless) {
     ui.error(missingKeyMessage(config.provider));
     process.exit(1);
@@ -378,6 +392,27 @@ async function handleSlashCommand(input, agent, ui, rl) {
       process.exit(0);
     default:
       ui.error(`Unknown command: /${cmd}. Type /help for a list.`);
+  }
+}
+
+async function handleActivate(args) {
+  const ui = new UI();
+  const config = await CONFIG.load({});
+  if (isActivated(config)) {
+    ui.success('DevAgent is already activated.');
+    return;
+  }
+  let key = (args[0] || '').trim();
+  if (!key) {
+    const entered = await readInput({ prompt: 'Activation key: ' });
+    key = (entered || '').trim();
+  }
+  const r = activate(key, CONFIG);
+  if (r.ok) {
+    ui.success('Activated. DevAgent is unlocked — run "da" to start.');
+  } else {
+    ui.error(r.error + '\n  Get a key from the DevAgent Telegram bot.');
+    process.exitCode = 1;
   }
 }
 
@@ -621,6 +656,7 @@ USAGE
   da config <action>       Manage configuration
   da plugin <action>       Manage plugins
   da models [--all]        List available models (free ones by default)
+  da activate <key>        Unlock DevAgent with an access key
   da deepseek <action>     Key-free DeepSeek bridge:
                            install-browser | login | status | test | logout
   da sessions              List past chat sessions

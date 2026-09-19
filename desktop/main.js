@@ -10,6 +10,7 @@ import { Agent } from '../src/core/agent.js';
 import { CONFIG } from '../src/core/config.js';
 import { PluginManager } from '../src/core/plugins.js';
 import { createSession, recordTurn } from '../src/core/sessions.js';
+import { activate, isActivated } from '../src/core/license.js';
 import { makeAppUI } from './app-ui.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -55,7 +56,18 @@ async function ensureAgent() {
   return agent;
 }
 
+ipcMain.handle('license:status', async () => {
+  const config = await CONFIG.load({});
+  return { activated: isActivated(config) };
+});
+
+ipcMain.handle('license:activate', async (_e, key) => {
+  return activate(key, CONFIG); // { ok } or { ok:false, error }
+});
+
 ipcMain.handle('chat:send', async (_e, text) => {
+  const cfg = await CONFIG.load({});
+  if (!isActivated(cfg)) return { ok: false, error: 'DevAgent is locked. Enter an access key.' };
   if (busy) return { ok: false, error: 'A request is already running.' };
   busy = true;
   try {

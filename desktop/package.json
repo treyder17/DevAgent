@@ -1,6 +1,6 @@
 {
   "name": "devagent-desktop",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "DevAgent desktop app (Windows, macOS, Linux) — the DevAgent engine with a GUI.",
   "type": "module",
   "main": "main.js",
@@ -24,9 +24,25 @@
       "**/*",
       "../src/**/*"
     ],
-    "extraMetadata": { "main": "main.js" },
-    "win": { "target": ["nsis"] },
-    "mac": { "target": ["dmg"], "category": "public.app-category.developer-tools" },
-    "linux": { "target": ["AppImage"], "category": "Development" }
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
   }
 }

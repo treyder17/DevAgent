@@ -1,6 +1,6 @@
 {
   "name": "devagent-cli",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "AI coding assistant for your terminal — codebase-aware, agent-powered, works with no API key at all.",
   "bin": {
     "da": "./src/da.js"
