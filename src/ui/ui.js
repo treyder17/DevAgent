@@ -64,6 +64,11 @@ export class UI {
     return C.brand('da') + C.muted(' › ') ;
   }
 
+  /** Colour functions for the boxed input reader. */
+  inputTheme() {
+    return { rule: C.muted, mark: C.brand, tag: C.tool };
+  }
+
   print(msg) {
     console.log(msg);
   }

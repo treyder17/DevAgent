@@ -21,6 +21,7 @@ import {
   browsersDir, managedFreeChrome, chromeRunning, profilePolicyActive,
 } from './core/browser.js';
 import { listSessions, createSession, recordTurn, describe } from './core/sessions.js';
+import { readInput } from './ui/input.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -155,26 +156,18 @@ async function runChat(argv) {
   if (!session) session = createSession({ cwd: workdir, provider: config.provider, model: config.model });
 
   ui.print('');
-  ui.print('Type your request, or /help for commands. Ctrl+C to exit.\n');
+  ui.print('Type your request, or /help for commands. Ctrl+C to exit.');
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: ui.promptStr(),
-    terminal: true,
-  });
+  const theme = ui.inputTheme();
+  while (true) {
+    const raw = await readInput({ prompt: '› ', colors: theme });
+    if (raw === null) break; // Ctrl+C / EOF
+    const input = raw.trim();
+    if (!input) continue;
 
-  rl.prompt();
-
-  rl.on('line', async (line) => {
-    const input = line.trim();
-    if (!input) { rl.prompt(); return; }
-
-    // Slash commands
     if (input.startsWith('/')) {
-      await handleSlashCommand(input, agent, ui, rl);
-      rl.prompt();
-      return;
+      await handleSlashCommand(input, agent, ui);
+      continue;
     }
 
     try {
@@ -183,14 +176,11 @@ async function runChat(argv) {
     } catch (err) {
       ui.error(err.message);
     }
-    rl.prompt();
-  });
+  }
 
-  rl.on('close', async () => {
-    await agent.dispose();
-    ui.print('\nGoodbye!');
-    process.exit(0);
-  });
+  await agent.dispose();
+  ui.print('\nGoodbye!');
+  process.exit(0);
 }
 
 /**
