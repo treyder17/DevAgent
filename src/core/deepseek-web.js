@@ -61,10 +61,13 @@ export class DeepSeekWebProvider {
     this.modelId = resolveWebModel(model) || 'deepseek-web';
     this.verbose = config.verbose;
 
-    // --resume: continue the last chat thread instead of opening a fresh one.
+    // --resume: continue a past chat instead of opening a fresh one. Either the
+    // last thread (resume) or a specific one picked from the list (resumeUrl).
     // A resumed thread already holds the primer and instructions, so don't
     // re-send them.
-    this.resume = config.resume === true;
+    this.resumeUrl = config.resumeUrl || null;
+    this.resume = config.resume === true || !!this.resumeUrl;
+    this.threadUrl = this.resumeUrl || '';   // exposed so a session can record it
 
     this.browser = null;
     this.page = null;
@@ -110,7 +113,12 @@ export class DeepSeekWebProvider {
     });
     this.browser = browser;
 
-    if (newThread) {
+    if (this.resumeUrl) {
+      // Reopen a specific past thread picked from `da --resume`.
+      this.page = await browser.newPage();
+      await this.page.goto(this.resumeUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await this._requireLogin();
+    } else if (newThread) {
       // A DeepSeek thread keeps its whole history, so reusing an open tab drags
       // a previous conversation's context (e.g. a persona primer) into every
       // new request. Start on a genuinely empty chat instead: open our own tab,
@@ -197,6 +205,12 @@ export class DeepSeekWebProvider {
 
     const outgoing = this._composeTurn({ system, tools, history });
     let reply = await this._send(outgoing);
+
+    // Remember which thread this is, so a session can reopen it later.
+    try {
+      const u = this.page.url();
+      if (/\/a\/chat\/s\//.test(u)) this.threadUrl = u;
+    } catch { /* page gone */ }
 
     // A tool call whose JSON could not be parsed used to end the turn
     // silently (no tool ran, no RESULT line). Instead, tell the model its

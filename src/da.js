@@ -20,6 +20,7 @@ import {
   getBrowser, getPage, defaultProfileDir, findChrome,
   browsersDir, managedFreeChrome, chromeRunning, profilePolicyActive,
 } from './core/browser.js';
+import { listSessions, createSession, recordTurn, describe } from './core/sessions.js';
 
 function missingKeyMessage(provider) {
   const preset = PROVIDERS[provider];
@@ -85,6 +86,16 @@ async function main() {
     return;
   }
 
+  if (cmd === 'sessions') {
+    const ui = new UI();
+    const rows = listSessions();
+    if (!rows.length) { ui.print('No sessions yet.'); return; }
+    ui.print('');
+    rows.forEach((row, i) => ui.print(`  ${String(i + 1).padStart(2)}. ${describe(row)}`));
+    ui.print('\nResume one with:  da --resume');
+    return;
+  }
+
   // One-shot mode: da "explain this function"
   if (cmd && cmd !== 'chat') {
     const prompt = [cmd, ...args].join(' ');
@@ -107,6 +118,18 @@ async function runChat(argv) {
   }
   config.ui = ui;
 
+  // --resume: pick a past session to continue (Claude Code style).
+  let session = null;
+  if (config.resume) {
+    session = await pickSession(ui);
+    if (session) {
+      if (session.threadUrl) config.resumeUrl = session.threadUrl;
+      ui.info(`Resuming: ${session.firstPrompt || session.id}`);
+    } else {
+      config.resume = false; // nothing picked → fresh session
+    }
+  }
+
   const workdir = resolve(argv.cwd || process.cwd());
   ui.info(`Working directory: ${workdir}`);
   ui.info(`Provider: ${config.provider} · Model: ${config.model}`);
@@ -128,6 +151,7 @@ async function runChat(argv) {
   }
 
   const agent = new Agent({ config, codebaseIndex, plugins, workdir, ui });
+  if (!session) session = createSession({ cwd: workdir, provider: config.provider, model: config.model });
 
   ui.print('');
   ui.print('Type your request, or /help for commands. Ctrl+C to exit.\n');
@@ -154,6 +178,7 @@ async function runChat(argv) {
 
     try {
       await agent.chat(input);
+      recordTurn(session, input, agent.threadUrl);
     } catch (err) {
       ui.error(err.message);
     }
@@ -165,6 +190,32 @@ async function runChat(argv) {
     ui.print('\nGoodbye!');
     process.exit(0);
   });
+}
+
+/** Interactive picker for `da --resume`, listing past sessions newest-first. */
+async function pickSession(ui) {
+  const sessions = listSessions();
+  if (!sessions.length) {
+    ui.warn('No previous sessions yet — starting a new one.');
+    return null;
+  }
+  ui.print('');
+  ui.print('Previous sessions (newest first):');
+  ui.print('');
+  sessions.forEach((s, i) => ui.print(`  ${String(i + 1).padStart(2)}. ${describe(s)}`));
+  ui.print('');
+  ui.print('  Enter a number, Enter = newest, q = new session.');
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  const answer = await new Promise((res) => rl.question('  › ', (a) => { rl.close(); res(a.trim()); }));
+
+  if (/^q/i.test(answer)) return null;
+  const idx = answer === '' ? 0 : parseInt(answer, 10) - 1;
+  if (Number.isNaN(idx) || idx < 0 || idx >= sessions.length) {
+    ui.warn('Invalid choice — starting a new session.');
+    return null;
+  }
+  return sessions[idx];
 }
 
 async function runOneShot(prompt, argv) {
@@ -495,6 +546,7 @@ USAGE
   da models [--all]        List available models (free ones by default)
   da deepseek <action>     Key-free DeepSeek bridge:
                            install-browser | login | status | test | logout
+  da sessions              List past chat sessions
   da index [dir]           Index a directory
 
 OPTIONS

@@ -26,6 +26,9 @@ export class Agent {
     this.history = [];
   }
 
+  /** Browser-thread URL of the current chat, if the provider tracks one. */
+  get threadUrl() { return this._provider?.threadUrl || ''; }
+
   /**
    * Release provider resources. Browser-backed providers hold an open
    * DevTools socket, which keeps the Node event loop alive after the last
