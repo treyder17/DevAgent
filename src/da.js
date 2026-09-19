@@ -15,7 +15,7 @@ import { PluginManager } from './core/plugins.js';
 import { UI } from './ui/ui.js';
 import { CONFIG } from './core/config.js';
 import { PROVIDERS, createProvider } from './core/providers.js';
-import { DeepSeekWebProvider, resolveWebModel } from './core/deepseek-web.js';
+import { DeepSeekWebProvider, resolveWebModel, listDeepSeekThreads } from './core/deepseek-web.js';
 import {
   getBrowser, getPage, defaultProfileDir, findChrome,
   browsersDir, managedFreeChrome, chromeRunning, profilePolicyActive,
@@ -118,13 +118,14 @@ async function runChat(argv) {
   }
   config.ui = ui;
 
-  // --resume: pick a past session to continue (Claude Code style).
+  // --resume: pick a past conversation to continue (Claude Code style).
   let session = null;
   if (config.resume) {
-    session = await pickSession(ui);
-    if (session) {
-      if (session.threadUrl) config.resumeUrl = session.threadUrl;
-      ui.info(`Resuming: ${session.firstPrompt || session.id}`);
+    const picked = await pickSession(ui, config);
+    if (picked) {
+      if (picked.resumeUrl) config.resumeUrl = picked.resumeUrl;
+      session = picked.session; // null for a sidebar chat with no local record
+      ui.info(`Resuming: ${picked.label.replace(/\s+/g, ' ').trim().slice(0, 60)}`);
     } else {
       config.resume = false; // nothing picked → fresh session
     }
@@ -192,30 +193,58 @@ async function runChat(argv) {
   });
 }
 
-/** Interactive picker for `da --resume`, listing past sessions newest-first. */
-async function pickSession(ui) {
-  const sessions = listSessions();
-  if (!sessions.length) {
-    ui.warn('No previous sessions yet — starting a new one.');
+/**
+ * Interactive picker for `da --resume`. Lists locally-recorded sessions AND,
+ * for the DeepSeek bridge, your existing chats from its sidebar — so older
+ * conversations that predate session recording still show up.
+ * Returns { session, resumeUrl, label } or null.
+ */
+async function pickSession(ui, config) {
+  const local = listSessions();
+
+  let threads = [];
+  if (config.provider === 'deepseek-web') {
+    const sp = ui.spinner('Loading your DeepSeek chats…');
+    try {
+      threads = await listDeepSeekThreads(config);
+      sp.succeed(`${threads.length} DeepSeek chat(s) found`);
+    } catch (err) {
+      sp.fail(`Could not read DeepSeek chats: ${err.message}`);
+    }
+  }
+
+  const localUrls = new Set(local.map((s) => s.threadUrl).filter(Boolean));
+  const items = [];
+  for (const s of local) {
+    items.push({ label: describe(s), session: s, resumeUrl: s.threadUrl || '' });
+  }
+  for (const t of threads) {
+    if (t.url && localUrls.has(t.url)) continue; // already shown as a local session
+    items.push({ label: `${'(deepseek)'.padEnd(24)} ${t.title}`, session: null, resumeUrl: t.url });
+  }
+
+  if (!items.length) {
+    ui.warn('No previous conversations found — starting a new one.');
     return null;
   }
+
   ui.print('');
-  ui.print('Previous sessions (newest first):');
+  ui.print('Previous conversations (newest first):');
   ui.print('');
-  sessions.forEach((s, i) => ui.print(`  ${String(i + 1).padStart(2)}. ${describe(s)}`));
+  items.forEach((it, i) => ui.print(`  ${String(i + 1).padStart(2)}. ${it.label}`));
   ui.print('');
-  ui.print('  Enter a number, Enter = newest, q = new session.');
+  ui.print('  Enter a number, Enter = newest, q = new conversation.');
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const answer = await new Promise((res) => rl.question('  › ', (a) => { rl.close(); res(a.trim()); }));
 
   if (/^q/i.test(answer)) return null;
   const idx = answer === '' ? 0 : parseInt(answer, 10) - 1;
-  if (Number.isNaN(idx) || idx < 0 || idx >= sessions.length) {
-    ui.warn('Invalid choice — starting a new session.');
+  if (Number.isNaN(idx) || idx < 0 || idx >= items.length) {
+    ui.warn('Invalid choice — starting a new conversation.');
     return null;
   }
-  return sessions[idx];
+  return items[idx];
 }
 
 async function runOneShot(prompt, argv) {

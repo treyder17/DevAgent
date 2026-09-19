@@ -506,3 +506,44 @@ export class DeepSeekWebProvider {
     }, REPLY_SELECTOR, REPLY_FALLBACK);
   }
 }
+
+/**
+ * List the user's existing chats from the DeepSeek sidebar so `da --resume`
+ * can offer them, not just locally-recorded sessions. Returns [{ title, url }]
+ * newest-first (sidebar order), deduped. Leaves the browser running so the
+ * chat that follows can reuse it.
+ */
+export async function listDeepSeekThreads(config = {}, limit = 25) {
+  const port = Number(config.deepseekPort) || 9222;
+  const { browser } = await getBrowser({
+    port,
+    profileDir: config.deepseekProfile || defaultProfileDir(),
+    headless: config.deepseekHeadless === true || config.deepseekHeadless === 'true',
+    chromePath: config.chromePath || null,
+    startUrl: CHAT_URL,
+  });
+  try {
+    const page = await getPage(browser, URL_MATCH, CHAT_URL);
+    // A logged-out page has no sidebar; don't hang waiting for one.
+    const loggedIn = await page.waitForSelector('#chat-input, textarea', { timeout: 15000 })
+      .then(() => true).catch(() => false);
+    if (!loggedIn) return [];
+    await new Promise(r => setTimeout(r, 2500)); // let the history list render
+
+    const threads = await page.evaluate(() => {
+      const seen = new Set();
+      const out = [];
+      for (const a of document.querySelectorAll('a[href*="/a/chat/s/"]')) {
+        const href = a.getAttribute('href') || '';
+        const url = href.startsWith('http') ? href : 'https://chat.deepseek.com' + href;
+        if (seen.has(url)) continue;
+        seen.add(url);
+        out.push({ title: (a.textContent || '').trim().slice(0, 60) || '(untitled)', url });
+      }
+      return out;
+    });
+    return threads.slice(0, limit);
+  } finally {
+    try { await browser.disconnect(); } catch { /* keep running */ }
+  }
+}
